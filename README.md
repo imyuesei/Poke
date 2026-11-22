@@ -1,17 +1,16 @@
-# Notch Eyes
+# Poke
 
-An Android app that puts a black "dynamic notch" with glowing, animated ring eyes on your home screen.
+A tiny digital pet that lives in a black island around your phone's front camera, with a ring
+eye on each side of the camera.
 
-- **Full-screen eyes** in the app: thick ring eyes that look around, blink, and switch moods (happy ∩∩, pleased, shy, sad). Touch to make them follow your finger, tap to make them smile.
-- **Floating notch** over the home screen: a black pill at the top with little eyes. Tap it to expand (shows time and battery), long-press for a shy face. For taps to work, turn on **Notch Eyes** in Settings → Accessibility (the status bar otherwise catches taps at the top of the screen). It also pops open when you unlock the phone or plug in or unplug the charger.
-- Adjust notch size and distance from the top in the app.
+- Its eyes are thick white rings. Faces are made by straight black bars that slide in and tilt
+  over the rings: happy ∩ ∩, content, shy, grumpy, sad ∪ ∪, and asleep (a thin sliver that
+  breathes late at night). Blinks are two bars closing like eyelids.
+- **Tap** it: happy and a hop. **Tap twice**: startled, eyes wide. **Hold** it: shy, then
+  content. Poke it over and over and it gets grumpy.
+- Open the Poke app and tap **let poke into your island**. Turn on **Poke** in Accessibility
+  so the island can be tapped (the status bar otherwise catches taps at the top of the screen).
+- **Poke updates itself** from this repo's releases. Android asks you to confirm the first
+  update; after that it updates quietly.
 
-## Download
-
-[NotchEyes.apk](https://github.com/imyuesei/Monolith-Ai/releases/latest/download/NotchEyes.apk) is built by GitHub Actions on every push.
-
-## Build locally
-
-```bash
-gradle :app:assembleDebug
-```
+Download: https://github.com/imyuesei/Poke/releases/latest/download/poke.apk

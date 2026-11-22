@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Poke" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF101113</item>
+        <item name="android:statusBarColor">#FF5F86A3</item>
+        <item name="android:navigationBarColor">#FF101113</item>
+    </style>
+</resources>
