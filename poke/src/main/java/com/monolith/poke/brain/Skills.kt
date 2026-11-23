@@ -445,10 +445,10 @@ object Caveman {
 
     /** "my sister's name is Mia" -> "you sister name Mia". */
     fun caveFact(fact: String): String = fact.trim().trimEnd('.', '!')
-        .replace(Regex("(?i)\bmy\b|\bi am\b|\bi'm\b|\bi\b"), "you")
-        .replace(Regex("(?i)'s\b"), "")
-        .replace(Regex("(?i)\b(is|are|am|the|a|an)\b"), "")
-        .replace(Regex("\s+"), " ").trim()
+        .replace(Regex("(?i)\\bmy\\b|\\bi am\\b|\\bi'm\\b|\\bi\\b"), "you")
+        .replace(Regex("(?i)'s\\b"), "")
+        .replace(Regex("(?i)\\b(is|are|am|the|a|an)\\b"), "")
+        .replace(Regex("\\s+"), " ").trim()
 
     fun learned(fact: String): String {
         val f = caveFact(fact)
