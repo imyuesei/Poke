@@ -50,6 +50,11 @@ class PokeActivity : Activity() {
             setTextColor(Color.WHITE)
             letterSpacing = 0.02f
             setShadowLayer(18f, 0f, 2f, 0x33000000)
+            // hidden: hold the title to open Poke's brain lab
+            setOnLongClickListener {
+                startActivity(Intent(this@PokeActivity, com.monolith.poke.brain.BrainActivity::class.java))
+                true
+            }
         }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = dp(72)
         })
@@ -197,8 +202,14 @@ class Scene(c: Context) : View(c) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        Mind.attach(context)
         removeCallbacks(loop)
         post(loop)
+    }
+
+    override fun onDetachedFromWindow() {
+        Mind.detach()
+        super.onDetachedFromWindow()
     }
 
     private fun bump() {

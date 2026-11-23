@@ -6,7 +6,6 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.os.SystemClock
-import java.util.Calendar
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -17,7 +16,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
- * Poke's little mind. Every expression lives in its two eyes: thick white rings that never
+ * Poke's eyes. Mood and decisions live in [Mind]; this follows them. The eyes are thick white rings that never
  * change shape. Faces are made by straight black bars that slide in and tilt over each ring,
  * and blinks by two bars closing like eyelids. Everything moves on time-based springs, so it
  * is equally smooth at 60 or 120 frames a second.
@@ -26,7 +25,7 @@ import kotlin.random.Random
  * startled (wide), grumpy (steep brows), sad ∪ ∪, a wink, a head-tilt, and asleep (a thin
  * sliver that breathes).
  */
-class Pet(private val c: Context) {
+class Pet(@Suppress("UNUSED_PARAMETER") c: Context) {
     /** Which bar sits over each eye. */
     enum class Shape { RING, HAPPY, CONTENT, SHY, GRUMPY, SAD, CLOSED }
 
@@ -75,88 +74,34 @@ class Pet(private val c: Context) {
     var glow = 1f
         private set
 
-    private enum class Mood { IDLE, HAPPY, LOVE, CONTENT, STARTLED, GRUMPY, SAD, ASLEEP }
-    private var mood = Mood.IDLE
-    private var moodUntil = 0L
-    private val pokes = mutableListOf<Long>()
-
-    // Idle life: little things Poke does on its own.
-    private var nextAct = now() + 1800
+    // What this pair of eyes is currently acting out (from Mind).
+    private var seenSerial = -1
+    private var act = Mind.Act.NONE
+    private var actStart = 0L
     private var actEnd = 0L
-    private var act = ""
-    private var blinkAt = -1L
-    private var blinkEye = -1 // -1 both, 0 / 1 one eye
     private var gazeX = 0f
     private var gazeY = 0f
+    private var winkEye = 0
+    private var blinkAt = -1L
+    private var blinkEye = -1
+    private var blinkLater = -1L
+    private var nextOwnBlink = now() + 2000
     private var last = 0L
 
     private fun now() = SystemClock.uptimeMillis()
-    private val prefs get() = c.getSharedPreferences("poke", Context.MODE_PRIVATE)
-    private fun remember() = prefs.edit().putLong("last_poke", System.currentTimeMillis()).apply()
-    private fun idleFor() = System.currentTimeMillis() - prefs.getLong("last_poke", System.currentTimeMillis())
 
-    private fun night(): Boolean {
-        val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        return h >= 23 || h < 7
-    }
+    // ------------------------------------------------------------- touch (forwarded to the mind)
 
-    // ------------------------------------------------------------- poking
+    fun poke() = Mind.onEvent(Mind.Event.POKE)
 
-    /** A poke: happy (grumpy if poked over and over; startled awake if asleep). */
-    fun poke() {
-        remember()
-        val t = now()
-        pokes.add(t)
-        pokes.removeAll { t - it > 2500 }
-        when {
-            mood == Mood.ASLEEP -> become(Mood.STARTLED, 900)
-            pokes.size >= 4 -> become(Mood.GRUMPY, 1300)
-            else -> become(Mood.HAPPY, 1300)
-        }
-        // A little hop.
-        for (e in eyes) e.dy.v -= 9f
-    }
+    fun doublePoke() = Mind.onEvent(Mind.Event.DOUBLE_POKE)
 
-    /** Two quick pokes: startled. */
-    fun doublePoke() {
-        remember()
-        become(Mood.STARTLED, 1000)
-    }
-
-    /** Held: shy and pleased while held, then content. */
-    fun pet(on: Boolean) {
-        if (on) {
-            remember()
-            become(Mood.LOVE, Long.MAX_VALUE / 4)
-        } else if (mood == Mood.LOVE) {
-            become(Mood.CONTENT, 1400)
-        }
-    }
-
-    private fun become(m: Mood, ms: Long) {
-        mood = m
-        moodUntil = now() + ms
-        act = ""
-        gazeX = 0f
-        gazeY = 0f
-        val s = when (m) {
-            Mood.HAPPY -> Shape.HAPPY
-            Mood.LOVE -> Shape.SHY
-            Mood.CONTENT -> Shape.CONTENT
-            Mood.GRUMPY -> Shape.GRUMPY
-            Mood.SAD -> Shape.SAD
-            Mood.ASLEEP -> Shape.CLOSED
-            else -> Shape.RING
-        }
-        setShape(0, s)
-        setShape(1, s)
-        if (m == Mood.STARTLED) for (e in eyes) e.scale.v += 6f
-        if (m == Mood.GRUMPY) for ((i, e) in eyes.withIndex()) e.dx.v += if (i == 0) 6f else -6f
-    }
+    fun pet(on: Boolean) = Mind.onEvent(if (on) Mind.Event.HOLD_START else Mind.Event.HOLD_END)
 
     /** Points an eye's bar at a new face; it slides in, or turns from the last face. */
     private fun setShape(i: Int, s: Shape) {
         val e = eyes[i]
+        if (e.shape == s) return
         e.shape = s
         val (angle, dist) = when (s) {
             Shape.RING -> Float.NaN to BAR_OFF
@@ -175,6 +120,16 @@ class Pet(private val c: Context) {
         e.barDist.t = dist
     }
 
+    private fun faceShape(f: Mind.Face) = when (f) {
+        Mind.Face.HAPPY -> Shape.HAPPY
+        Mind.Face.CONTENT -> Shape.CONTENT
+        Mind.Face.SHY -> Shape.SHY
+        Mind.Face.GRUMPY -> Shape.GRUMPY
+        Mind.Face.SAD -> Shape.SAD
+        Mind.Face.ASLEEP -> Shape.CLOSED
+        else -> Shape.RING
+    }
+
     // ------------------------------------------------------------- living
 
     /** Moves everything a step; returns true while something is still changing. */
@@ -182,43 +137,56 @@ class Pet(private val c: Context) {
         val t = now()
         val dt = if (last == 0L) 0.016f else min(0.05f, (t - last) / 1000f)
         last = t
+        val face = Mind.face
 
-        // The second blink of a double blink, and the end of a happy bounce.
+        // A new act from the mind.
+        if (Mind.actSerial != seenSerial) {
+            seenSerial = Mind.actSerial
+            startAct(Mind.act, Mind.actX, Mind.actY, t)
+        }
+        if (act != Mind.Act.NONE && t > actEnd) {
+            act = Mind.Act.NONE
+            gazeX = 0f
+            gazeY = 0f
+        }
+        // Little blinks of its own, between the mind's decisions.
+        if (face != Mind.Face.ASLEEP && t > nextOwnBlink) {
+            blink(-1)
+            nextOwnBlink = t + 2600 + Random.nextLong(3800)
+        }
         if (blinkLater in 1..t) {
             blinkLater = -1
             blink(-1)
         }
-        if (afterBounce && act.isEmpty()) {
-            afterBounce = false
-            setShape(0, Shape.RING)
-            setShape(1, Shape.RING)
+
+        // Shapes: the face, or the act's own (bounce = happy, wink = one happy eye).
+        for (i in 0..1) {
+            var s = faceShape(face)
+            if (act == Mind.Act.BOUNCE && face == Mind.Face.ROUND) s = Shape.HAPPY
+            if (act == Mind.Act.WINK && i == winkEye && face == Mind.Face.ROUND) s = Shape.HAPPY
+            setShape(i, s)
         }
-        // Moods wear off.
-        if (mood != Mood.IDLE && mood != Mood.ASLEEP && t > moodUntil) become(Mood.IDLE, 0)
-        // Late at night a quiet Poke falls asleep; morning (or a poke) wakes it.
-        if (mood == Mood.IDLE && night() && idleFor() > 90_000) become(Mood.ASLEEP, 0)
-        if (mood == Mood.ASLEEP && !night()) become(Mood.IDLE, 0)
-        if (mood == Mood.IDLE && idleFor() > 6 * 3600_000L && t > nextAct && Random.nextFloat() < 0.3f) become(Mood.SAD, 2600)
 
-        if (mood == Mood.IDLE) idle(t)
-
-        // Targets for this frame.
         for ((i, e) in eyes.withIndex()) {
             var scale = 1f
             var dx = gazeX * 0.5f
             var dy = gazeY * 0.32f
-            when (mood) {
-                Mood.STARTLED -> scale = 1.22f
-                Mood.HAPPY -> dy -= 0.14f
-                Mood.LOVE -> { scale = 1f + 0.06f * sin(t / 260.0 * PI).toFloat(); dy += 0.1f }
-                Mood.CONTENT -> dx += 0.12f * sin(t / 900.0 * PI).toFloat()
-                Mood.SAD -> { dy += 0.22f; scale = 0.92f }
-                Mood.GRUMPY -> { scale = 0.95f; dx += 0.06f * sin(t / 45.0).toFloat() }
-                Mood.ASLEEP -> dy += 0.12f
+            when (face) {
+                Mind.Face.STARTLED -> scale = 1.22f
+                Mind.Face.HAPPY -> dy -= 0.14f
+                Mind.Face.SHY -> { scale = 1f + 0.06f * sin(t / 260.0 * PI).toFloat(); dy += 0.1f }
+                Mind.Face.CONTENT -> dx += 0.12f * sin(t / 900.0 * PI).toFloat()
+                Mind.Face.SAD -> { dy += 0.22f; scale = 0.92f }
+                Mind.Face.GRUMPY -> { scale = 0.95f; dx += 0.06f * sin(t / 45.0).toFloat() }
+                Mind.Face.ASLEEP -> dy += 0.12f
                 else -> {}
             }
-            if (act == "tilt") { dy += if (i == 0) -0.2f else 0.2f; scale *= if (i == 0) 1.08f else 0.94f }
-            if (act == "bounce") dy += -0.16f * abs(sin((t - actEnd + 900) / 150.0 * PI).toFloat())
+            when (act) {
+                Mind.Act.TILT -> { dy += if (i == 0) -0.2f else 0.2f; scale *= if (i == 0) 1.08f else 0.94f }
+                Mind.Act.BOUNCE -> dy += -0.16f * abs(sin((t - actStart) / 150.0 * PI).toFloat())
+                Mind.Act.LOOK -> scale *= 1.1f
+                else -> {}
+            }
             e.scale.t = scale
             e.dx.t = dx
             e.dy.t = dy
@@ -252,51 +220,35 @@ class Pet(private val c: Context) {
 
         var moving = false
         for (e in eyes) if (e.springs.any { it.moving } || e.barAngle.moving) moving = true
-        glow = if (mood == Mood.ASLEEP) 0.55f + 0.3f * sin(t / 1100.0 * PI).toFloat() else min(1f, glow + dt * 3f)
-        return moving || mood == Mood.ASLEEP || mood == Mood.LOVE || mood == Mood.GRUMPY ||
-            mood == Mood.CONTENT || act.isNotEmpty() || blinkAt >= 0
+        glow = if (face == Mind.Face.ASLEEP) 0.55f + 0.3f * sin(t / 1100.0 * PI).toFloat() else min(1f, glow + dt * 3f)
+        return moving || face == Mind.Face.ASLEEP || face == Mind.Face.SHY || face == Mind.Face.GRUMPY ||
+            face == Mind.Face.CONTENT || act != Mind.Act.NONE || blinkAt >= 0
     }
 
-    /** Little things Poke does when left alone. */
-    private fun idle(t: Long) {
-        if (act.isNotEmpty() && t > actEnd) {
-            if (act == "wink") setShape(winkEye, Shape.RING)
-            act = ""
-            gazeX = 0f
-            gazeY = 0f
-            nextAct = t + 1500 + Random.nextLong(3500)
-        }
-        if (act.isNotEmpty() || t < nextAct) return
-        val r = Random.nextFloat()
-        when {
-            r < 0.36f -> { blink(-1); nextAct = t + 1800 + Random.nextLong(3200) }
-            r < 0.44f -> { blink(-1); blinkLater = t + 330; nextAct = t + 2200 } // double blink
-            r < 0.72f -> { // a glance somewhere, held, then back
-                act = "glance"
-                gazeX = (Random.nextFloat() * 2f - 1f).let { if (abs(it) < 0.4f) it * 2f else it }.coerceIn(-1f, 1f)
-                gazeY = (Random.nextFloat() * 2f - 1f) * 0.7f
-                actEnd = t + 700 + Random.nextLong(1300)
-            }
-            r < 0.8f -> { act = "tilt"; gazeX = if (Random.nextBoolean()) 0.3f else -0.3f; actEnd = t + 1300 + Random.nextLong(900) }
-            r < 0.86f -> { act = "wink"; winkEye = Random.nextInt(2); setShape(winkEye, Shape.HAPPY); actEnd = t + 700 }
-            r < 0.93f -> { act = "pleased"; setShape(0, Shape.CONTENT); setShape(1, Shape.CONTENT); actEnd = t + 1600; afterBounce = true }
-            else -> { act = "bounce"; setShape(0, Shape.HAPPY); setShape(1, Shape.HAPPY); actEnd = t + 900; afterBounce = true }
+    private fun startAct(a: Mind.Act, x: Float, y: Float, t: Long) {
+        actStart = t
+        when (a) {
+            Mind.Act.GLANCE -> { act = a; gazeX = x; gazeY = y; actEnd = t + 700 + Random.nextLong(1300) }
+            Mind.Act.TILT -> { act = a; gazeX = if (Random.nextBoolean()) 0.3f else -0.3f; actEnd = t + 1300 + Random.nextLong(900) }
+            Mind.Act.BOUNCE -> { act = a; actEnd = t + 900 }
+            Mind.Act.WINK -> { act = a; winkEye = Random.nextInt(2); actEnd = t + 700 }
+            Mind.Act.LOOK -> { act = a; gazeX = 0f; gazeY = 0f; actEnd = t + 1000 }
+            Mind.Act.HOP -> for (e in eyes) e.dy.v -= 9f
+            Mind.Act.BLINK -> blink(-1)
+            Mind.Act.DOUBLE_BLINK -> { blink(-1); blinkLater = t + 330 }
+            Mind.Act.NONE -> { act = Mind.Act.NONE; gazeX = 0f; gazeY = 0f }
         }
     }
-
-    private var winkEye = 0
-    private var blinkLater = -1L
-    private var afterBounce = false
 
     private fun blink(eye: Int) {
         blinkAt = now()
         blinkEye = eye
     }
 
-    /** Milliseconds until Poke next does something on its own (so idle frames can rest). */
+    /** Milliseconds until these eyes next do something on their own (so idle frames can rest). */
     fun quietFor(): Long {
         val t = now()
-        val until = if (blinkLater > 0) blinkLater else nextAct
+        val until = if (blinkLater > 0) min(blinkLater, nextOwnBlink) else nextOwnBlink
         return max(16L, until - t)
     }
 

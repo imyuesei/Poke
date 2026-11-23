@@ -23,6 +23,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch the Cactus engine for android-arm64
+        run: |
+          pip install --quiet cactus-compute
+          cactus download android-arm64 --out poke/src/main/cpp/cactus
+          ls -la poke/src/main/cpp/cactus/android-arm64
+          find poke/src/main/cpp/cactus -name "*.h" -exec head -80 {} \;
+
       - name: Build APK
         run: |
           chmod +x gradlew

@@ -3,3 +3,5 @@ build/
 local.properties
 *.iml
 .idea/
+poke/src/main/cpp/cactus/
+.cxx/

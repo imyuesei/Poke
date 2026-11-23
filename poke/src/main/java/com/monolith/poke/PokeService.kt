@@ -224,9 +224,19 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
         isHapticFeedbackEnabled = true
     }
 
+    private val mindChanged: () -> Unit = { post { wake() } }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        Mind.attach(context)
+        Mind.addListener(mindChanged)
         wake()
+    }
+
+    override fun onDetachedFromWindow() {
+        Mind.removeListener(mindChanged)
+        Mind.detach()
+        super.onDetachedFromWindow()
     }
 
     private val loop = object : Runnable {
