@@ -129,6 +129,8 @@ object Mind {
         save()
     }
 
+    private var lastMinute = 0L
+
     private val tick = object : Runnable {
         override fun run() {
             val n = now()
@@ -136,6 +138,16 @@ object Mind {
             lastTick = n
             live(dt, n)
             if (System.currentTimeMillis() - lastSave > 60_000) save()
+            // once a minute: tricks set for a time of day, and sleep-time memory work
+            val minute = System.currentTimeMillis() / 60_000L
+            if (minute != lastMinute) {
+                lastMinute = minute
+                ctx?.let { c ->
+                    com.monolith.poke.brain.Tricks.tick(c)
+                    com.monolith.poke.brain.Sleep.tick(c)
+                }
+                checkStage()
+            }
             // keep living while anything shows Poke; otherwise breathe slowly
             main.postDelayed(this, if (hosts > 0) 1000L else 15_000L)
         }
@@ -155,12 +167,15 @@ object Mind {
         val lonelyRate = 0.00010f + 0.00020f * t01(AFFECTIONATE) // ~1.5-3 h to "desperate"
         attention = clamp01(attention + dt * lonelyRate)
         curiosity = clamp01(curiosity + dt * (0.0015f + 0.001f * t01(PLAYFUL)))
-        energy = if (asleep) clamp01(energy + dt * 0.0004f) else clamp01(energy - dt * (0.00003f + 0.00002f * (1 - t01(ENERGETIC))))
+        val drain = when (stage()) { Stage.BABY -> 1.6f; Stage.KID -> 1.15f; Stage.TEEN -> 1f; Stage.ADULT -> 0.9f }
+        energy = if (asleep) clamp01(energy + dt * 0.0004f) else clamp01(energy - dt * drain * (0.00003f + 0.00002f * (1 - t01(ENERGETIC))))
 
         // mood relaxes to a personality baseline (and sinks when lonely)
         val baseV = 0.15f + 0.1f * t(AFFECTIONATE) + 0.15f * t(PLAYFUL) - 0.25f * t(GRUMPY) - 0.4f * max(0f, attention - 0.6f)
         val baseA = (if (asleep) 0.05f else 0.3f + 0.2f * t(ENERGETIC)) - 0.2f * (1 - energy)
-        val k = 1f - exp(-dt / 90f)
+        // babies and teens swing faster; adults settle slower
+        val settle = when (stage()) { Stage.BABY -> 60f; Stage.KID -> 80f; Stage.TEEN -> 70f; Stage.ADULT -> 120f }
+        val k = 1f - exp(-dt / settle)
         valence += (baseV - valence) * k
         arousal += (baseA - arousal) * k
 
@@ -182,7 +197,7 @@ object Mind {
             if (n > faceUntil) setFace(Face.ROUND)
             if (n >= nextBehaviour && n > faceUntil) {
                 behave(n)
-                val pace = 1f - 0.5f * arousal - 0.2f * t01(ENERGETIC)
+                val pace = (1f - 0.5f * arousal - 0.2f * t01(ENERGETIC)) * (if (stage() == Stage.ADULT) 1.3f else 1f)
                 nextBehaviour = n + (2500 + Random.nextLong(4500) * pace).toLong()
             }
         }
@@ -231,7 +246,7 @@ object Mind {
                     Voice.chirp(ctx, Voice.Kind.SULK, this, proactive = true)
                 }
             },
-            Option(max(0f, t(GRUMPY)) * (neg + 0.1f) * 1.2f) { show(Face.GRUMPY, 1400) },
+            Option(max(0f, t(GRUMPY)) * (neg + 0.1f) * 1.2f * (if (stage() == Stage.TEEN) 1.6f else 1f)) { show(Face.GRUMPY, 1400) },
             Option(if (energy < 0.3f) (0.3f - energy) * 3f else 0f) { show(Face.ASLEEP, 6000 + Random.nextLong(8000)) },
         )
         // energetic Poke picks more decisively; calm Poke wanders
@@ -263,6 +278,7 @@ object Mind {
         val social = e in setOf(Event.POKE, Event.DOUBLE_POKE, Event.HOLD_START, Event.PRAISE, Event.SCOLD,
             Event.GREETING, Event.GOODNIGHT, Event.LOVE, Event.PLAY, Event.TAUGHT)
         if (social) {
+            interactions++
             lastInteraction = System.currentTimeMillis()
             attention = clamp01(attention - 0.35f)
         }
@@ -314,6 +330,7 @@ object Mind {
                 Voice.chirp(ctx, Voice.Kind.PURR, this)
             }
             Event.UNLOCK -> if (!asleep) {
+                trickEvent("unlock")
                 if (attention > 0.5f) {
                     show(Face.HAPPY, 1200)
                     doAct(Act.BOUNCE)
@@ -325,20 +342,29 @@ object Mind {
             Event.SCREEN_ON -> { screenOn = true; if (!asleep) doAct(Act.BLINK) }
             Event.SCREEN_OFF -> screenOn = false
             Event.CHARGING -> {
+                trickEvent("charging")
                 if (!asleep) show(Face.CONTENT, 2200)
                 mood(0.1f, 0.05f)
                 energy = clamp01(energy + 0.1f)
             }
-            Event.UNPLUGGED -> if (!asleep) show(Face.SAD, 1200)
+            Event.UNPLUGGED -> {
+                trickEvent("unplugged")
+                if (!asleep) show(Face.SAD, 1200)
+            }
             Event.BATTERY_LOW -> {
+                trickEvent("battery_low")
                 energy = min(energy, 0.25f)
                 if (!asleep) {
                     show(Face.SAD, 2000)
                     Voice.chirp(ctx, Voice.Kind.SULK, this, proactive = true)
                 }
             }
-            Event.HEADSET -> if (!asleep) glance()
+            Event.HEADSET -> {
+                trickEvent("headset")
+                if (!asleep) glance()
+            }
             Event.PRAISE -> {
+                ctx?.let { com.monolith.poke.brain.Tricks.feedback(it, true) }
                 if (asleep) wake(false)
                 show(Face.HAPPY, 1800)
                 doAct(Act.BOUNCE)
@@ -349,6 +375,7 @@ object Mind {
                 Voice.chirp(ctx, Voice.Kind.HAPPY, this)
             }
             Event.SCOLD -> {
+                ctx?.let { c -> com.monolith.poke.brain.Tricks.feedback(c, false)?.let { say(it) } }
                 if (asleep) wake(false)
                 show(if (t(GRUMPY) > 0.2f) Face.GRUMPY else Face.SAD, 2200)
                 mood(-0.3f, 0.1f)
@@ -474,6 +501,63 @@ object Mind {
         arousal = (arousal + da).coerceIn(0f, 1f)
     }
 
+    private fun trickEvent(name: String) {
+        ctx?.let { com.monolith.poke.brain.Tricks.onEvent(it, name) }
+    }
+
+    /** Life with you shapes Poke (used by opinions: games, music, late nights). */
+    fun nudgeTrait(i: Int, d: Float) = nudge(i, d)
+
+    /** A strong opinion about an app that just opened. */
+    fun react(like: Boolean) {
+        if (asleep) return
+        if (like) {
+            show(Face.HAPPY, 1500)
+            doAct(Act.BOUNCE)
+            mood(0.05f, 0.1f)
+            Voice.chirp(ctx, Voice.Kind.HAPPY, this, proactive = true)
+        } else {
+            show(if (t(GRUMPY) > 0f) Face.GRUMPY else Face.SAD, 1800)
+            mood(-0.05f, 0.05f)
+            Voice.chirp(ctx, Voice.Kind.GRUMBLE, this, proactive = true)
+        }
+    }
+
+    // ---------------------------------------------------------------- growing up
+
+    enum class Stage { BABY, KID, TEEN, ADULT }
+
+    private var interactions = 0
+    private var shownStage: Stage? = null
+
+    /** Poke grows with time and with how much you play with it. */
+    fun stage(): Stage {
+        val days = ageDays()
+        return when {
+            days < 2 || interactions < 40 -> Stage.BABY
+            days < 10 || interactions < 200 -> Stage.KID
+            days < 30 || interactions < 600 -> Stage.TEEN
+            else -> Stage.ADULT
+        }
+    }
+
+    private fun checkStage() {
+        val s = stage()
+        val before = shownStage
+        shownStage = s
+        if (before == null || before == s) return
+        show(Face.HAPPY, 2500)
+        doAct(Act.BOUNCE)
+        Voice.chirp(ctx, Voice.Kind.PROUD, this)
+        say(when (s) {
+            Stage.KID -> "Me grow! Me kid now!"
+            Stage.TEEN -> "Me bigger. Me teen now. Hmph."
+            Stage.ADULT -> "Me grown up now. Thank you."
+            Stage.BABY -> "Goo."
+        })
+        nudge(BOLD, 0.03f)
+    }
+
     private fun nudge(i: Int, d: Float) {
         traits[i] = (traits[i] + d).coerceIn(-1f, 1f)
     }
@@ -499,8 +583,9 @@ object Mind {
     /** One line describing Poke's state, for the brain lab. */
     fun describe(): String {
         val days = (System.currentTimeMillis() - born) / 86_400_000L
+        val life = "${stage().name.lowercase()} · $interactions plays · "
         val tr = TRAIT_NAMES.indices.joinToString("  ") { "${TRAIT_NAMES[it]} ${"%+.2f".format(traits[it])}" }
-        return "age ${days}d · mood ${"%+.2f".format(valence)} / ${"%.2f".format(arousal)} · " +
+        return life + "age ${days}d · mood ${"%+.2f".format(valence)} / ${"%.2f".format(arousal)} · " +
             "needs you ${"%.2f".format(attention)} · curious ${"%.2f".format(curiosity)} · energy ${"%.2f".format(energy)}" +
             (if (asleep) " · asleep" else "") + "\n" + tr
     }
@@ -560,6 +645,7 @@ object Mind {
             lastInteraction = o.optLong("lastInteraction", System.currentTimeMillis())
             lastCall = o.optLong("lastCall", 0L)
             born = o.optLong("born", System.currentTimeMillis())
+            interactions = o.optInt("interactions", 0)
             // time passed while Poke wasn't running still counts (it missed you)
             val away = ((System.currentTimeMillis() - o.optLong("saved", System.currentTimeMillis())) / 1000f).coerceIn(0f, 86400f)
             attention = clamp01(attention + away * 0.00015f)
@@ -581,6 +667,7 @@ object Mind {
             .put("lastInteraction", lastInteraction)
             .put("lastCall", lastCall)
             .put("born", born)
+            .put("interactions", interactions)
             .put("saved", System.currentTimeMillis())
         p.edit().putString("state", o.toString()).apply()
     }

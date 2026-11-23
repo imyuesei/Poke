@@ -3,14 +3,10 @@ package com.monolith.poke.brain
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
 import com.monolith.poke.Mind
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executors
 
 /**
  * Poke's episodic memory: everything that happens to it, in order. Each episode keeps when it
@@ -19,25 +15,8 @@ import java.util.concurrent.Executors
  * memories by meaning and tidy them up at night.
  */
 object Episodes {
-    private val writer = Executors.newSingleThreadExecutor()
-    private var helper: Helper? = null
-
-    private class Helper(c: Context) : SQLiteOpenHelper(c, "poke_memory.db", null, 1) {
-        override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE episodes (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, " +
-                    "text TEXT, detail TEXT, valence REAL, arousal REAL, face TEXT, strength REAL DEFAULT 1, emb BLOB)",
-            )
-            db.execSQL("CREATE INDEX episodes_at ON episodes(at)")
-        }
-
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-    }
-
-    private fun db(c: Context): SQLiteDatabase {
-        val h = helper ?: Helper(c.applicationContext).also { helper = it }
-        return h.writableDatabase
-    }
+    private val writer get() = Db.writer
+    private fun db(c: Context): SQLiteDatabase = Db.get(c)
 
     /** Records an episode (written in the background). */
     fun log(c: Context, kind: String, text: String, detail: String, emb: FloatArray? = null) {
@@ -93,14 +72,33 @@ object Episodes {
         0
     }
 
-    private fun pack(v: FloatArray): ByteArray {
-        val b = ByteBuffer.allocate(v.size * 4).order(ByteOrder.LITTLE_ENDIAN)
-        v.forEach { b.putFloat(it) }
-        return b.array()
+    private fun pack(v: FloatArray): ByteArray = Db.pack(v)
+
+    /** Episodes of one day (for the diary): kind and text. */
+    fun ofDay(c: Context, from: Long, to: Long): List<Pair<String, String>> = try {
+        db(c).rawQuery("SELECT kind, text FROM episodes WHERE at >= $from AND at < $to", null).use { cur ->
+            val out = mutableListOf<Pair<String, String>>()
+            while (cur.moveToNext()) out.add(cur.getString(0) to cur.getString(1).orEmpty())
+            out
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 
-    fun unpack(bytes: ByteArray): FloatArray {
-        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        return FloatArray(bytes.size / 4) { b.getFloat() }
+    /** Average mood of one day's episodes. */
+    fun moodOfDay(c: Context, from: Long, to: Long): Double = try {
+        db(c).rawQuery("SELECT AVG(valence) FROM episodes WHERE at >= $from AND at < $to", null).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 }
+    } catch (_: Exception) {
+        0.0
+    }
+
+    /** Night-time tidy: old everyday events go; what was heard is kept longer. */
+    fun prune(c: Context) {
+        val now = System.currentTimeMillis()
+        try {
+            db(c).execSQL("DELETE FROM episodes WHERE kind = 'event' AND at < ${now - 21L * 86_400_000L}")
+            db(c).execSQL("DELETE FROM episodes WHERE at < ${now - 120L * 86_400_000L}")
+        } catch (_: Exception) {
+        }
     }
 }

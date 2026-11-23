@@ -193,6 +193,8 @@ class Pet(@Suppress("UNUSED_PARAMETER") c: Context) {
                 Mind.Act.LOOK -> scale *= 1.1f
                 else -> {}
             }
+            // babies have bigger eyes; they settle as Poke grows up
+            scale *= when (Mind.stage()) { Mind.Stage.BABY -> 1.12f; Mind.Stage.KID -> 1.05f; Mind.Stage.TEEN -> 1f; Mind.Stage.ADULT -> 0.97f }
             e.scale.t = scale
             e.dx.t = dx
             e.dy.t = dy

@@ -40,7 +40,9 @@ object Voice {
         // personality and mood shape the voice: energetic and happy is higher and quicker
         val e = (mind.traits[Mind.ENERGETIC] + 1f) / 2f
         val bold = (mind.traits[Mind.BOLD] + 1f) / 2f
-        val base = 380f * 2f.pow((0.35f * mind.arousal + 0.15f * mind.valence + 0.15f * e - 0.15f * bold) )
+        // babies squeak, adults are a little lower
+        val age = when (mind.stage()) { Mind.Stage.BABY -> 0.45f; Mind.Stage.KID -> 0.2f; Mind.Stage.TEEN -> 0f; Mind.Stage.ADULT -> -0.12f }
+        val base = 380f * 2f.pow((0.35f * mind.arousal + 0.15f * mind.valence + 0.15f * e - 0.15f * bold + age))
         val speed = 1.15f - 0.35f * mind.arousal - 0.1f * e
         val st = { s: Float -> 2f.pow(s / 12f) } // semitones
         val sy = when (kind) {
@@ -192,7 +194,8 @@ object Voice {
     fun say(c: Context, text: String, mind: Mind) {
         if (!mind.soundAllowed(false) || !Speech.wordsOn(c)) return
         val e = (mind.traits[Mind.ENERGETIC] + 1f) / 2f
-        val pitch = (62 + 18 * mind.valence + 10 * mind.arousal + 6 * e).toInt()
+        val age = when (mind.stage()) { Mind.Stage.BABY -> 14; Mind.Stage.KID -> 7; Mind.Stage.TEEN -> 0; Mind.Stage.ADULT -> -6 }
+        val pitch = (62 + 18 * mind.valence + 10 * mind.arousal + 6 * e + age).toInt()
         val range = (60 + 30 * mind.arousal).toInt()
         val wpm = (165 + 50 * mind.arousal + 20 * e - (if (mind.valence < -0.3f) 25 else 0)).toInt()
         Speech.say(c, text, pitch, range, wpm)

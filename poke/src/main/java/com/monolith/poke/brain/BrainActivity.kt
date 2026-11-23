@@ -135,9 +135,13 @@ class BrainActivity : Activity() {
         col.addView(text(12f, 0x88FFFFFF.toInt()).apply { text = "MEMORY" })
         memory = text(13f, 0xCCFFFFFF.toInt())
         col.addView(memory)
+        col.addView(gap(10))
+        col.addView(button("open journal (diary, personality, tricks, opinions)") {
+            startActivity(android.content.Intent(this, JournalActivity::class.java))
+        })
+        col.addView(gap(8))
         col.addView(button("forget places and facts") {
-            Memory.clear(this)
-            refresh()
+            kotlin.concurrent.thread { Memory.clear(applicationContext); runOnUiThread { refresh() } }
         })
 
         setContentView(ScrollView(this).apply { setBackgroundColor(BG); addView(col) })

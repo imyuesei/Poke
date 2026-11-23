@@ -16,6 +16,18 @@ eye on each side of the camera.
   It understands on the phone (Whistle for hearing, Needle 3 for meaning), answers in caveman
   talk in a bubble under the island and out loud, and remembers every moment in its
   episodic memory. Try "I parked on level 3 near the blue pillar" and later "where did I park?".
+- **Memory** (stage 3): places and facts with a strength that grows when Poke recalls them and
+  fades when nobody asks; at night, while it sleeps, Poke tidies its memory (merges duplicates,
+  forgets faded old things) and writes a short diary entry about the day.
+- **Tricks** (stage 4): teach Poke by voice. "When I say good night, turn on do not disturb and
+  turn off the flashlight." "Every day at 7 am, play music." "When I plug in, turn on quiet mode."
+  Actions: timers, reminders, flashlight, do not disturb, open apps, music and volume. Say
+  "good Poke" after a trick to make it stronger, "no Poke" to weaken it (it forgets weak tricks).
+- **Growing up** (stage 5): Poke forms its own opinions about the apps you use and the things
+  you talk about, and says so ("Hmph. Instagram again..."); ask "do you like …?". It grows from
+  baby to kid to teen to adult with time and play: eyes, voice and behaviour change, and its
+  personality drifts with how you treat it and how you use your phone.
+- **Journal**: from the brain lab: life stage, personality chart, diary, opinions, tricks, memories.
 - **Brain lab**: hold the "poke" title in the app. Download the brain, set CPU threads per model,
   turn the wake word on or off, and watch Poke's mind and memories.
 - **Poke updates itself** from this repo's releases. Android asks you to confirm the first

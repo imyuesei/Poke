@@ -58,7 +58,12 @@ class PokeAccessibilityService : AccessibilityService() {
         sync()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // which app is in front: Poke forms opinions about the apps you use (stage 5)
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            com.monolith.poke.brain.Opinions.onApp(this, event.packageName?.toString())
+        }
+    }
 
     override fun onInterrupt() {}
 

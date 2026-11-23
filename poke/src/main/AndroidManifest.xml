@@ -14,6 +14,16 @@
     <!-- Poke's ears (Whistle runs on the phone; audio never leaves it). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Tricks: do not disturb on/off -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+    <!-- Tricks can open your apps, and Poke has opinions about them: it needs to see their names. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -66,6 +76,16 @@
             android:name=".ears.EarsService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".brain.ReminderReceiver"
+            android:exported="false" />
+
+        <activity
+            android:name=".brain.JournalActivity"
+            android:exported="false"
+            android:label="Poke's journal"
+            android:screenOrientation="portrait" />
 
         <receiver
             android:name=".UpdateReceiver"
