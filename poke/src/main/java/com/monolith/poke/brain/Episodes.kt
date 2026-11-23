@@ -68,7 +68,7 @@ object Episodes {
     /** The latest [n] episodes as readable lines, newest first. */
     fun recent(c: Context, n: Int): List<String> = try {
         val fmt = SimpleDateFormat("MMM d HH:mm", Locale.US)
-        db(c).rawQuery("SELECT at, kind, text, detail, valence, emb IS NOT NULL FROM episodes ORDER BY at DESC LIMIT ?", arrayOf(n.toString())).use { cur ->
+        db(c).rawQuery("SELECT at, kind, text, detail, valence, emb IS NOT NULL FROM episodes ORDER BY at DESC LIMIT ${n.coerceIn(1, 500)}", null).use { cur ->
             val out = mutableListOf<String>()
             while (cur.moveToNext()) {
                 val mood = cur.getDouble(4)

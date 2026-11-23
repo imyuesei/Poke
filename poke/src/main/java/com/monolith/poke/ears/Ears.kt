@@ -180,6 +180,7 @@ object Ears {
     // ------------------------------------------------------------------ understanding
 
     @Volatile private var lastSaid = ""
+    @Volatile private var whistleMs: Long? = null
 
     /** Whistle -> (wake word) -> Needle -> Skills; replies in the bubble and out loud. */
     private fun process(c: Context, pcm: FloatArray, requireWake: Boolean) {
@@ -190,11 +191,27 @@ object Ears {
         }
         if (!requireWake) main.post { Mind.onEvent(Mind.Event.THINKING) }
         Brain.async({ Brain.hear(c, pcm, KEYWORDS) }) { r ->
-            val heard = r.getOrNull() ?: return@async
+            val heard = r.getOrNull()
+            if (heard == null) {
+                com.monolith.poke.brain.Talk.note("(whistle failed)", r.exceptionOrNull()?.message ?: "error", null)
+                return@async
+            }
             var text = heard.text
-            if (text.isBlank() || isEcho(text)) return@async
+            if (text.isBlank()) {
+                if (!requireWake) com.monolith.poke.brain.Talk.note("(nothing)", "whistle heard no words", heard.ms)
+                return@async
+            }
+            if (isEcho(text)) {
+                com.monolith.poke.brain.Talk.note(text, "ignored: Poke's own voice", heard.ms)
+                return@async
+            }
+            whistleMs = heard.ms
             if (requireWake) {
-                val m = WAKE.find(text) ?: return@async // not for Poke
+                val m = WAKE.find(text)
+                if (m == null) { // not for Poke
+                    com.monolith.poke.brain.Talk.note(text, "ignored: no wake word", heard.ms)
+                    return@async
+                }
                 text = text.substring(m.range.last + 1).trim()
                 if (text.length < 2) {
                     attentiveUntil = SystemClock.elapsedRealtime() + 7000
@@ -223,16 +240,20 @@ object Ears {
 
     /** Needle reads [text]; Poke acts, answers, and remembers the moment. */
     fun understand(c: Context, text: String) {
+        val wMs = whistleMs
+        whistleMs = null
         Brain.async({
-            val thought = Brain.think(c, text, Skills.TOOLS, Skills.system())
-            val reply = Skills.act(c, thought, text)
+            val h = Skills.handle(c, text)
             val emb = runCatching { Brain.embed(c, text) }.getOrNull()
-            Episodes.log(c, "heard", text, reply.detail, emb)
-            reply
+            Episodes.log(c, "heard", text, "[${h.reply.how}] ${h.reply.detail} → ${h.reply.words}", emb)
+            com.monolith.poke.brain.Talk.add(com.monolith.poke.brain.Talk.Turn(System.currentTimeMillis(), text, wMs,
+                h.needleMs, h.reply.how, h.reply.call, h.reply.words, h.reply.detail))
+            h.reply
         }) { r ->
             r.onSuccess { reply -> say(c, reply.words) }
                 .onFailure { e ->
                     Episodes.log(c, "error", text, e.message ?: "failed")
+                    com.monolith.poke.brain.Talk.note(text, "error: ${e.message}", wMs)
                     say(c, "Hmm? Me head hurt.")
                 }
         }

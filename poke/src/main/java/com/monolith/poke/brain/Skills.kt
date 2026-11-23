@@ -10,30 +10,33 @@ import java.util.Locale
 import kotlin.random.Random
 
 /**
- * What Poke can do with what it understands (stage 0 toolset), its small memory of places
- * and facts, and how it answers: caveman talk built from templates. Needle 3 only ever
- * returns a structured tool call, never free text, so the words come from here, picked by
- * mood.
+ * What Poke does with what it hears, and how it answers (caveman talk from templates;
+ * Needle 3 only ever returns a structured tool call, never free text).
+ *
+ * Understanding goes in three steps:
+ *  1. Precise rules catch the everyday phrasings (questions about Poke, parking, "where is",
+ *     timers, "my X is Y").
+ *  2. Otherwise Needle 3 picks a tool.
+ *  3. Guards check Needle's pick: a question is never stored as a memory (it is answered
+ *     instead), and a memory must be in the user's own words.
  */
 object Skills {
-    /** Five tools or fewer, plain names, no shared prefixes (as Needle 3 prefers). */
+    /** Five tools, plain names, no shared prefixes (as Needle 3 prefers). */
     val TOOLS: String = JSONArray()
-        // "item" is optional: "I parked on level 3" never names the car, and a required slot
-        // the words don't contain makes Needle hold the whole call back.
-        .put(tool("store_place", "Remember where something was parked or left",
+        .put(tool("remember", "Remember something the user tells Poke: where an item is, or a fact about them or their world",
             JSONObject()
-                .put("item", prop("string", "the thing, like car, bike, keys or wallet; car if parked"))
-                .put("place", prop("string", "where it is, in the user's words")),
-            listOf("place")))
-        .put(tool("where_is", "Say where something was parked or left",
-            JSONObject().put("item", prop("string", "the thing being looked for; car if parked")),
+                .put("item", prop("string", "the thing that was put or parked somewhere, like car, keys, wallet"))
+                .put("place", prop("string", "where the item is, in the user's words"))
+                .put("fact", prop("string", "a fact the user states, in their words")),
             listOf()))
-        .put(tool("learn_fact", "Learn a fact the user teaches about themselves or their world",
-            JSONObject()
-                .put("subject", prop("string", "who or what the fact is about"))
-                .put("fact", prop("string", "the fact, in the user's words")),
-            listOf("fact")))
-        .put(tool("react", "React to how the user is treating Poke",
+        .put(tool("recall", "Answer a question about something the user told Poke before: where an item is, or a fact like a name",
+            JSONObject().put("query", prop("string", "what the user wants to know")),
+            listOf("query")))
+        .put(tool("ask_poke", "Answer a question about Poke itself, like its name, age or how it feels",
+            JSONObject().put("topic", JSONObject().put("type", "string")
+                .put("enum", JSONArray(listOf("name", "age", "feeling", "likes", "abilities")))),
+            listOf("topic")))
+        .put(tool("react", "React to how the user treats Poke: praise, scolding, greetings, goodnight, love or play",
             JSONObject().put("feeling", JSONObject().put("type", "string")
                 .put("enum", JSONArray(listOf("praise", "scold", "greeting", "goodnight", "love", "play")))),
             listOf("feeling")))
@@ -58,75 +61,111 @@ object Skills {
 
     // ------------------------------------------------------------------ acting
 
-    class Reply(val words: String, val detail: String)
+    class Reply(val words: String, val detail: String, val how: String = "", val call: String = "")
 
     /** Mind lives on the main thread; the brain thread hands it events. */
     private fun feel(e: Mind.Event) {
         android.os.Handler(android.os.Looper.getMainLooper()).post { Mind.onEvent(e) }
     }
 
-    /**
-     * Carries out what Poke understood from [text] and returns what it says back.
-     * Runs on the brain thread. Needle's call is used when it made one (including a call it
-     * held back but got right); when it made none, simple rules catch the everyday phrasings
-     * (parking, "where is", timers).
-     */
-    fun act(c: Context, thought: Brain.Thought, text: String): Reply {
-        var call = thought.firstCall
+    /** Questions are answered, never stored. */
+    fun isQuestion(text: String): Boolean {
+        val t = text.trim().lowercase(Locale.US)
+        return t.endsWith("?") || Regex("^(what|what's|whats|who|who's|where|where's|when|why|how|which|whose|" +
+            "is|are|am|do|does|did|can|could|will|would|should|have|has|tell me)\\b").containsMatchIn(t)
+    }
+
+    /** True when most of [value]'s words appear in [text] (the user really said it). */
+    private fun grounded(value: String, text: String): Boolean {
+        val words = value.lowercase(Locale.US).split(Regex("[^a-z0-9]+")).filter { it.length > 1 }
+        if (words.isEmpty()) return false
+        val t = text.lowercase(Locale.US)
+        return words.count { t.contains(it) }.toFloat() / words.size >= 0.6f
+    }
+
+    class Handled(val reply: Reply, val needleMs: Long?)
+
+    /** Understands [text] and acts: rules first (no model needed), else Needle. Brain thread. */
+    fun handle(c: Context, text: String): Handled {
+        if (Rules.parse(text) != null) return Handled(act(c, null, text), null)
+        val thought = Brain.think(c, text, TOOLS, system())
+        return Handled(act(c, thought, text), thought.ms)
+    }
+
+    /** Carries out what Poke understood from [text]. Runs on the brain thread. */
+    fun act(c: Context, thought: Brain.Thought?, text: String): Reply {
+        // 1. precise rules first
+        Rules.parse(text)?.let { rule -> return run(c, rule, text, "rules") }
+        // 2. Needle's pick (a call it held back counts too)
+        var call = thought?.firstCall
         var how = "needle"
-        val conf = thought.confidence
         if (call == null) {
-            val held = thought.raw.optJSONArray("suppressed_calls")
+            val held = thought?.raw?.optJSONArray("suppressed_calls")
             if (held != null && held.length() > 0) {
                 call = held.getJSONObject(0)
                 how = "needle (held back)"
             }
-        } else if (!conf.isNaN() && conf < 0.15) {
-            how = "needle (unsure)"
         }
-        val rule = Rules.parse(text)
-        if (call == null || (how != "needle" && rule != null)) {
-            if (rule != null) {
-                call = rule
-                how = "rules"
-            }
-        }
+        val conf = thought?.confidence ?: Double.NaN
         if (call == null) {
             feel(Mind.Event.CONFUSED)
-            return Reply(Caveman.confused(), "no call")
+            return Reply(Caveman.confused(), "no call", "none")
         }
-        val r = run(c, call, text)
-        return Reply(r.words, "[$how] ${r.detail}")
-    }
-
-    private fun run(c: Context, call: JSONObject, text: String): Reply {
+        // 3. guards
+        val name = call.optString("name")
         val args = call.optJSONObject("arguments") ?: JSONObject()
-        val parked = Regex("(?i)\\bpark").containsMatchIn(text)
-        return when (call.optString("name")) {
-            "store_place" -> {
-                val item = args.optString("item").ifBlank { if (parked) "car" else "thing" }
-                val place = args.optString("place").ifBlank { text }
-                Memory.storePlace(c, item, place)
-                feel(Mind.Event.TAUGHT)
-                Reply(Caveman.stored(item, place), "remembered $item → $place")
-            }
-            "where_is" -> {
-                val item = args.optString("item").ifBlank { if (parked) "car" else Memory.lastItem(c) ?: "thing" }
-                val found = Memory.findPlace(c, item)
-                if (found != null) {
-                    feel(Mind.Event.TAUGHT)
-                    Reply(Caveman.recalled(found.first, found.second), "recalled ${found.first} → ${found.second}")
-                } else {
+        if (name == "remember") {
+            val value = args.optString("place").ifBlank { args.optString("fact") }
+            when {
+                isQuestion(text) -> {
+                    // a question: answer it instead of storing it
+                    val about = if (Regex("(?i)\\b(you|your|yourself)\\b").containsMatchIn(text)) "ask_poke" else "recall"
+                    call = if (about == "ask_poke") Rules.call("ask_poke", JSONObject().put("topic", Rules.topic(text)))
+                    else Rules.call("recall", JSONObject().put("query", text))
+                    how += " → guard: question"
+                }
+                value.isBlank() || !grounded(value, text) || (!conf.isNaN() && conf < 0.3) -> {
                     feel(Mind.Event.CONFUSED)
-                    Reply(Caveman.notFound(item), "nothing stored for $item")
+                    return Reply(Caveman.unsure(), "not stored: unsure or not in your words", "$how → guard", call.toString())
                 }
             }
-            "learn_fact" -> {
-                val subject = args.optString("subject").ifBlank { "you" }
-                val fact = args.optString("fact").ifBlank { text }
-                Memory.learnFact(c, subject, fact)
-                feel(Mind.Event.TAUGHT)
-                Reply(Caveman.learned(subject, fact), "learned: $subject — $fact")
+        }
+        return run(c, call!!, text, how)
+    }
+
+    private fun run(c: Context, call: JSONObject, text: String, how: String): Reply {
+        val args = call.optJSONObject("arguments") ?: JSONObject()
+        val parked = Regex("(?i)\\bpark").containsMatchIn(text)
+        val r: Pair<String, String> = when (call.optString("name")) {
+            "remember" -> {
+                val place = args.optString("place")
+                val fact = args.optString("fact")
+                if (place.isNotBlank()) {
+                    val item = args.optString("item").ifBlank { if (parked) "car" else "thing" }
+                    Memory.storePlace(c, item, place)
+                    feel(Mind.Event.TAUGHT)
+                    Caveman.stored(item, place) to "remembered $item → $place"
+                } else {
+                    Memory.learnFact(c, fact)
+                    feel(Mind.Event.TAUGHT)
+                    Caveman.learned(fact) to "learned: $fact"
+                }
+            }
+            "recall" -> {
+                val q = args.optString("query").ifBlank { text }
+                val found = Memory.recall(c, q, parked)
+                if (found != null) {
+                    feel(Mind.Event.TAUGHT)
+                    found.first to "recalled: ${found.second}"
+                } else {
+                    feel(Mind.Event.CONFUSED)
+                    Caveman.notFound() to "nothing remembered for \"$q\""
+                }
+            }
+            "ask_poke" -> {
+                val topic = args.optString("topic").ifBlank { Rules.topic(text) }
+                feel(Mind.Event.GREETING)
+                Caveman.aboutMe(topic) to "about me: $topic"
             }
             "react" -> {
                 val f = args.optString("feeling")
@@ -140,35 +179,39 @@ object Skills {
                         else -> Mind.Event.PLAY
                     },
                 )
-                Reply(Caveman.feeling(f), "feeling: $f")
+                Caveman.feeling(f) to "feeling: $f"
             }
             "set_timer" -> {
                 var secs = args.optInt("minutes", 0) * 60 + args.optInt("seconds", 0)
                 if (secs <= 0) secs = Rules.duration(text)
                 if (secs <= 0) {
                     feel(Mind.Event.CONFUSED)
-                    return Reply("How long? Me no hear time.", "timer without a length")
+                    "How long? Me no hear time." to "timer without a length"
+                } else {
+                    val label = com.monolith.poke.Timers.label(secs)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { com.monolith.poke.Timers.start(c, secs, label) }
+                    feel(Mind.Event.TAUGHT)
+                    Caveman.timer(label) to "timer: $secs s"
                 }
-                val label = com.monolith.poke.Timers.label(secs)
-                android.os.Handler(android.os.Looper.getMainLooper()).post { com.monolith.poke.Timers.start(c, secs, label) }
-                feel(Mind.Event.TAUGHT)
-                Reply(Caveman.timer(label), "timer: $secs s")
             }
             else -> {
                 feel(Mind.Event.CONFUSED)
-                Reply(Caveman.confused(), "unknown tool")
+                Caveman.confused() to "unknown tool"
             }
         }
+        return Reply(r.first, r.second, how, call.toString())
     }
 }
 
-/** Plain rules for the everyday phrasings, used when Needle makes no call. */
+/** Precise rules for the everyday phrasings; they run before Needle. */
 object Rules {
     private val numbers = mapOf(
         "a" to 1, "an" to 1, "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5, "six" to 6,
         "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10, "fifteen" to 15, "twenty" to 20, "thirty" to 30,
-        "forty" to 40, "forty-five" to 45, "sixty" to 60, "half an" to 30,
+        "forty" to 40, "forty-five" to 45, "sixty" to 60,
     )
+
+    fun call(name: String, args: JSONObject): JSONObject = JSONObject().put("name", name).put("arguments", args)
 
     /** Seconds named in [text] ("5 minutes", "a minute and 30 seconds", "half an hour"), or 0. */
     fun duration(text: String): Int {
@@ -187,7 +230,17 @@ object Rules {
         return total
     }
 
-    private fun call(name: String, args: JSONObject) = JSONObject().put("name", name).put("arguments", args)
+    /** Which question about Poke itself [text] is. */
+    fun topic(text: String): String {
+        val t = text.lowercase(Locale.US)
+        return when {
+            Regex("\\bname\\b|\\bwho are you\\b|\\bcalled\\b").containsMatchIn(t) -> "name"
+            Regex("\\bold\\b|\\bage\\b|\\bborn\\b|\\bbirthday\\b").containsMatchIn(t) -> "age"
+            Regex("\\blike\\b|\\blove\\b|\\bfavou?rite\\b|\\benjoy\\b").containsMatchIn(t) -> "likes"
+            Regex("\\bcan you\\b|\\bwhat do you do\\b|\\babilit|\\bhelp\\b").containsMatchIn(t) -> "abilities"
+            else -> "feeling"
+        }
+    }
 
     fun parse(text: String): JSONObject? {
         val t = text.trim().trimEnd('.', '!', '?')
@@ -197,33 +250,53 @@ object Rules {
             val s = duration(low)
             if (s > 0) return call("set_timer", JSONObject().put("seconds", s))
         }
-        // questions: where is / where did I park
-        Regex("\\bwhere(?:'s| is| are| did i (?:park|leave|put))\\s*(?:my|the)?\\s*([a-z ]*)").find(low)?.let { m ->
-            val item = m.groupValues[1].replace(Regex("\\b(it|them|again|now)\\b"), "").trim()
-            val args = JSONObject()
-            if (item.isNotEmpty()) args.put("item", item) else if (low.contains("park")) args.put("item", "car")
-            return call("where_is", args)
+        // questions about Poke itself: "what is your name", "how are you", "how old are you"
+        if (Skills.isQuestion(text) && Regex("\\b(you|your|yourself)\\b").containsMatchIn(low) &&
+            !Regex("\\b(where|remember|did i|my)\\b").containsMatchIn(low)
+        ) {
+            return call("ask_poke", JSONObject().put("topic", topic(low)))
         }
+        // "where did I park", "where are my keys"
+        if (Regex("\\bwhere(?:'s| is| are| did i| do i| have i)\\b").containsMatchIn(low)) {
+            return call("recall", JSONObject().put("query", t))
+        }
+        // other questions about things the user told Poke: "what is my sister's name"
+        if (Skills.isQuestion(text) && Regex("\\b(my|mine|i)\\b").containsMatchIn(low)) {
+            return call("recall", JSONObject().put("query", t))
+        }
+        if (Skills.isQuestion(text)) return null // other questions: let Needle try, guarded
         // "I parked on level 3 near the blue pillar"
         Regex("\\b(?:i\\s+)?parked\\s+(?:my\\s+(\\w+)\\s+)?(.+)").find(low)?.let { m ->
             val item = m.groupValues[1].ifBlank { "car" }
-            return call("store_place", JSONObject().put("item", item).put("place", t.substring(m.groups[2]!!.range.first)))
+            return call("remember", JSONObject().put("item", item).put("place", t.substring(m.groups[2]!!.range.first)))
         }
         // "my keys are in the kitchen drawer" / "I left my wallet on the desk"
-        Regex("\\b(?:i\\s+(?:left|put)\\s+)?(?:my|the)\\s+([a-z]+(?:\\s[a-z]+)?)\\s+(?:is|are|on|in|at|under)?\\s*((?:in|on|at|under|behind|near|next to|inside)\\b.+)").find(low)?.let { m ->
-            return call("store_place", JSONObject().put("item", m.groupValues[1]).put("place", t.substring(m.groups[2]!!.range.first)))
+        Regex("\\b(?:i\\s+(?:left|put)\\s+)?(?:my|the)\\s+([a-z]+(?:\\s[a-z]+)?)\\s+(?:is|are)?\\s*((?:in|on|at|under|behind|near|next to|inside)\\b.+)").find(low)?.let { m ->
+            return call("remember", JSONObject().put("item", m.groupValues[1]).put("place", t.substring(m.groups[2]!!.range.first)))
+        }
+        // "remember that ...", "my sister's name is Mia", "I like pizza"
+        Regex("^(?:remember(?: that)?|note that)\\s+(.+)").find(low)?.let { m ->
+            return call("remember", JSONObject().put("fact", t.substring(m.groups[1]!!.range.first)))
+        }
+        if (Regex("^(?:my\\s+\\w+(?:'s)?(?:\\s\\w+)?\\s+(?:is|are)\\s+.+|i\\s+(?:am|like|love|hate|work|live)\\s+.+)").containsMatchIn(low)) {
+            return call("remember", JSONObject().put("fact", t))
         }
         return null
     }
 }
 
-/** Poke's first memories: where things are, and facts you teach it (stage 3 grows this). */
+/** Poke's memories of places and facts (stage 3 grows this into consolidated memory). */
 object Memory {
     private fun prefs(c: Context) = c.getSharedPreferences("poke_memory", Context.MODE_PRIVATE)
+    private val STOP = setOf("the", "a", "an", "my", "your", "is", "are", "was", "were", "i", "me", "you", "what", "whats",
+        "where", "did", "do", "does", "of", "to", "in", "on", "at", "it", "s", "that", "tell", "remember", "please", "poke")
 
     private fun norm(s: String) = s.lowercase(Locale.US)
         .replace(Regex("\\b(my|the|a|an|our|your)\\b"), " ")
         .replace(Regex("\\s+"), " ").trim()
+
+    private fun keywords(s: String) = s.lowercase(Locale.US).replace("'s", "").split(Regex("[^a-z0-9]+"))
+        .filter { it.length > 1 && it !in STOP }.toSet()
 
     fun storePlace(c: Context, item: String, place: String) {
         val o = JSONObject(prefs(c).getString("places", "{}") ?: "{}")
@@ -231,39 +304,68 @@ object Memory {
         prefs(c).edit().putString("places", o.toString()).putString("last_item", item).commit()
     }
 
-    /** Exact match first, then a word match, then the closest by meaning (Needle embeddings). */
-    fun findPlace(c: Context, item: String): Pair<String, String>? {
-        val o = JSONObject(prefs(c).getString("places", "{}") ?: "{}")
-        val key = norm(item)
-        o.optJSONObject(key)?.let { return it.optString("item") to it.optString("place") }
-        val keys = o.keys().asSequence().toList()
-        keys.firstOrNull { k -> k.split(" ").any { w -> w.length > 2 && key.contains(w) } }?.let {
-            val e = o.getJSONObject(it)
-            return e.optString("item") to e.optString("place")
-        }
-        val q = runCatching { Brain.embed(c, key) }.getOrNull() ?: return null
-        var best: String? = null
-        var bestScore = 0.6f
-        for (k in keys) {
-            val v = runCatching { Brain.embed(c, k) }.getOrNull() ?: continue
-            val s = Brain.cosine(q, v)
-            if (s > bestScore) {
-                bestScore = s
-                best = k
-            }
-        }
-        return best?.let { val e = o.getJSONObject(it); e.optString("item") to e.optString("place") }
-    }
-
-    fun lastItem(c: Context): String? = prefs(c).getString("last_item", null)
-
-    fun learnFact(c: Context, subject: String, fact: String) {
+    fun learnFact(c: Context, fact: String) {
         val a = JSONArray(prefs(c).getString("facts", "[]") ?: "[]")
-        a.put(JSONObject().put("subject", subject).put("fact", fact).put("at", System.currentTimeMillis()))
+        a.put(JSONObject().put("fact", fact).put("at", System.currentTimeMillis()))
         prefs(c).edit().putString("facts", a.toString()).commit()
     }
 
+    /**
+     * Finds what the user asked about among places and facts: shared keywords first, then
+     * closeness of meaning (Needle embeddings). Returns (what Poke says, what it found).
+     */
+    fun recall(c: Context, query: String, parked: Boolean): Pair<String, String>? {
+        val places = JSONObject(prefs(c).getString("places", "{}") ?: "{}")
+        val facts = JSONArray(prefs(c).getString("facts", "[]") ?: "[]")
+        class Cand(val text: String, val say: () -> String, val shown: String)
+        val cands = mutableListOf<Cand>()
+        places.keys().forEach { k ->
+            val e = places.getJSONObject(k)
+            val item = e.optString("item")
+            val place = e.optString("place")
+            cands.add(Cand("$item ${if (item == "car") "park parked" else ""}", { Caveman.recalled(item, place) }, "$item → $place"))
+        }
+        for (i in 0 until facts.length()) {
+            val f = facts.getJSONObject(i)
+            val fact = f.optString("fact").ifBlank { f.optString("subject") + " " + f.optString("fact") }
+            cands.add(Cand(fact, { Caveman.factRecall(fact) }, fact))
+        }
+        if (cands.isEmpty()) return null
+        val q = keywords(query + if (parked) " car park" else "")
+        var best: Cand? = null
+        var bestScore = 0f
+        for (cd in cands) {
+            val k = keywords(cd.text)
+            val s = if (k.isEmpty()) 0f else q.count { it in k }.toFloat() / q.size.coerceAtLeast(1)
+            if (s > bestScore) { bestScore = s; best = cd }
+        }
+        if (best != null && bestScore >= 0.34f) return best.say() to best.shown
+        // closeness of meaning
+        val qe = runCatching { Brain.embed(c, query) }.getOrNull() ?: return null
+        best = null
+        var bestSim = 0.62f
+        for (cd in cands) {
+            val e = runCatching { Brain.embed(c, cd.text) }.getOrNull() ?: continue
+            val sim = Brain.cosine(qe, e)
+            if (sim > bestSim) { bestSim = sim; best = cd }
+        }
+        return best?.let { it.say() to it.shown }
+    }
+
+    /** Drops "facts" that were really questions (stored by older versions). */
+    private fun purgeQuestions(c: Context) {
+        val a = JSONArray(prefs(c).getString("facts", "[]") ?: "[]")
+        val keep = JSONArray()
+        for (i in 0 until a.length()) {
+            val f = a.getJSONObject(i)
+            val text = f.optString("fact")
+            if (!Skills.isQuestion(text) && text.isNotBlank()) keep.put(f)
+        }
+        if (keep.length() != a.length()) prefs(c).edit().putString("facts", keep.toString()).commit()
+    }
+
     fun summary(c: Context): String {
+        purgeQuestions(c)
         val places = JSONObject(prefs(c).getString("places", "{}") ?: "{}")
         val facts = JSONArray(prefs(c).getString("facts", "[]") ?: "[]")
         val sb = StringBuilder()
@@ -273,9 +375,15 @@ object Memory {
         }
         for (i in 0 until facts.length()) {
             val f = facts.getJSONObject(i)
-            sb.append("• ").append(f.optString("subject")).append(": ").append(f.optString("fact")).append('\n')
+            val fact = f.optString("fact").ifBlank { f.optString("subject") }
+            sb.append("• ").append(fact).append('\n')
         }
         return sb.toString().ifBlank { "(nothing yet)" }
+    }
+
+    /** Forgets everything Poke was told (places and facts). */
+    fun clear(c: Context) {
+        prefs(c).edit().clear().commit()
     }
 }
 
@@ -330,21 +438,52 @@ object Caveman {
         }
     }
 
-    fun notFound(item: String): String {
-        val i = thing(item)
+    fun notFound(): String = when (tone()) {
+        Tone.GRUMPY -> pick("Me no know. You no tell me.", "Hmph. Not in head.")
+        else -> pick("Hmm... me no know.", "You no tell me that. Tell me?")
+    }
+
+    /** "my sister's name is Mia" -> "you sister name Mia". */
+    fun caveFact(fact: String): String = fact.trim().trimEnd('.', '!')
+        .replace(Regex("(?i)\bmy\b|\bi am\b|\bi'm\b|\bi\b"), "you")
+        .replace(Regex("(?i)'s\b"), "")
+        .replace(Regex("(?i)\b(is|are|am|the|a|an)\b"), "")
+        .replace(Regex("\s+"), " ").trim()
+
+    fun learned(fact: String): String {
+        val f = caveFact(fact)
         return when (tone()) {
-            Tone.GRUMPY -> pick("$i? Me no know. You no tell me.", "Hmph. No $i in head.")
-            else -> pick("$i? Me no know...", "Me not see $i. You tell me?")
+            Tone.HAPPY -> pick("Me learn! $f!", "Ooh. $f. Me smart now!")
+            Tone.GRUMPY -> pick("Hmph. $f. Okay.", "Me learn. $f.")
+            else -> pick("$f. Me learn.", "Me keep: $f.")
         }
     }
 
-    fun learned(subject: String, fact: String): String {
-        val s = thing(subject)
-        val f = place(fact)
+    fun factRecall(fact: String): String {
+        val f = caveFact(fact)
         return when (tone()) {
-            Tone.HAPPY -> pick("Me learn! $s... $f!", "Ooh. $s: $f. Me smart now!")
-            Tone.GRUMPY -> pick("Hmph. $s, $f. Okay.", "Me learn. $s... $f.")
-            else -> pick("$s... $f. Me learn.", "Me keep. $s: $f.")
+            Tone.HAPPY -> pick("Me know! $f!", "$f! Me good memory!")
+            Tone.GRUMPY -> pick("Hmph. $f.", "Again? $f.")
+            else -> pick("$f.", "Me remember: $f.")
+        }
+    }
+
+    fun unsure(): String = pick("Hmm? Say again?", "Me not sure. Again?", "Huh? Me no get it.")
+
+    /** Questions about Poke itself. */
+    fun aboutMe(topic: String): String {
+        val days = Mind.ageDays()
+        return when (topic) {
+            "name" -> pick("Me Poke!", "Poke! Me Poke.", "Me name Poke. Hehe.")
+            "age" -> if (days < 1) pick("Me baby! Born today.", "Me new. Today first day!") else pick("Me $days day old.", "$days day! Me growing.")
+            "likes" -> pick("Me like pokes. And you.", "Me like when you hold me.", "Me like play!")
+            "abilities" -> pick("Me remember things. Me count time.", "Me keep where car is. Me learn facts.")
+            else -> when (tone()) {
+                Tone.HAPPY -> pick("Me happy!", "Me good! Happy happy.")
+                Tone.GRUMPY -> pick("Me grumpy.", "Hmph. Not good.")
+                Tone.SLEEPY -> pick("Me sleepy...", "Tired. Zzz.")
+                Tone.PLAIN -> if (Mind.attention > 0.6f) "Me miss you." else pick("Me okay.", "Me fine. You?")
+            }
         }
     }
 

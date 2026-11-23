@@ -37,6 +37,9 @@ class BrainActivity : Activity() {
     private lateinit var detail: TextView
     private lateinit var mind: TextView
     private lateinit var memory: TextView
+    private lateinit var talkFeed: TextView
+    private var talkVersion = -1
+    private var ticks = 0
     private lateinit var input: EditText
     private lateinit var talk: TextView
     private lateinit var wake: TextView
@@ -125,9 +128,17 @@ class BrainActivity : Activity() {
         mind = text(12f, 0xCCFFFFFF.toInt()).apply { typeface = Typeface.MONOSPACE }
         col.addView(mind)
         col.addView(gap(12))
+        col.addView(text(12f, 0x88FFFFFF.toInt()).apply { text = "CONVERSATION (live)" })
+        talkFeed = text(12f, 0xCCFFFFFF.toInt()).apply { typeface = Typeface.MONOSPACE }
+        col.addView(talkFeed)
+        col.addView(gap(12))
         col.addView(text(12f, 0x88FFFFFF.toInt()).apply { text = "MEMORY" })
         memory = text(13f, 0xCCFFFFFF.toInt())
         col.addView(memory)
+        col.addView(button("forget places and facts") {
+            Memory.clear(this)
+            refresh()
+        })
 
         setContentView(ScrollView(this).apply { setBackgroundColor(BG); addView(col) })
         refresh()
@@ -137,9 +148,22 @@ class BrainActivity : Activity() {
 
     private val pulse = object : Runnable {
         override fun run() {
-            mind.text = Mind.describe() + "\nface ${Mind.face.name.lowercase()}"
+            mind.text = Mind.describe() + "\nface ${Mind.face.name.lowercase()}" +
+                (if (Mind.listening) " · ears open" else "")
+            if (Talk.version != talkVersion) {
+                talkVersion = Talk.version
+                talkFeed.text = Talk.render(12)
+                refresh()
+            } else if (++ticks % 5 == 0) {
+                refresh() // memories written from the island show up here too
+            }
             main.postDelayed(this, 1000)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
     }
 
     override fun onDestroy() {
@@ -235,26 +259,18 @@ class BrainActivity : Activity() {
     private fun understand(text: String, heardMs: Long?) {
         said.text = "…"
         Brain.async({
-            val thought = Brain.think(this, text, Skills.TOOLS, Skills.system())
-            val reply = Skills.act(this, thought, text)
-            Episodes.log(this, "heard", text, reply.detail, runCatching { Brain.embed(this, text) }.getOrNull())
-            thought to reply
+            val h = Skills.handle(this, text)
+            Episodes.log(this, "heard", text, "[${h.reply.how}] ${h.reply.detail} → ${h.reply.words}",
+                runCatching { Brain.embed(this, text) }.getOrNull())
+            Talk.add(Talk.Turn(System.currentTimeMillis(), text, heardMs, h.needleMs, h.reply.how, h.reply.call,
+                h.reply.words, h.reply.detail))
+            h
         }) { r ->
-            r.onSuccess { (thought, reply) ->
-                said.text = reply.words
-                Mind.say(reply.words)
-                Voice.say(this, reply.words, Mind)
-                val call = thought.firstCall?.toString() ?: thought.raw.optJSONArray("suppressed_calls")?.toString() ?: "none"
-                detail.text = buildString {
-                    append("heard: \"").append(text).append("\"\n")
-                    if (heardMs != null) append("whistle: ").append(heardMs).append(" ms\n")
-                    append("needle: ").append(thought.ms).append(" ms")
-                    val c = thought.confidence
-                    if (!c.isNaN()) append(" · confidence ").append("%.2f".format(c))
-                    append("\ncall: ").append(call)
-                    append("\n").append(reply.detail)
-                    thought.raw.optString("error").takeIf { it.isNotBlank() && it != "null" }?.let { append("\nerror: ").append(it) }
-                }
+            r.onSuccess { h ->
+                said.text = h.reply.words
+                Mind.say(h.reply.words)
+                Voice.say(this, h.reply.words, Mind)
+                detail.text = ""
                 refresh()
             }.onFailure {
                 said.text = "Hmm?"

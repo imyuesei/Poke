@@ -20,7 +20,7 @@ import kotlin.random.Random
  * Caveman sentences ("Car. Level three. Me remember!") are spoken with eSpeak NG ([Speech]).
  */
 object Voice {
-    enum class Kind { HAPPY, CALL, SULK, GRUMBLE, STARTLED, PURR, CONFUSED, PROUD, LISTEN }
+    enum class Kind { HAPPY, CALL, SULK, GRUMBLE, STARTLED, PURR, CONFUSED, PROUD, LISTEN, ALARM }
 
     private const val RATE = 22050
     private val worker = Executors.newSingleThreadExecutor()
@@ -58,6 +58,13 @@ object Voice {
             )
             Kind.CALL -> listOf(Syl('p', 'o', base, base * st(7f), (260 * speed).toInt(), 0.9f)) // "po?"
             Kind.LISTEN -> listOf(Syl('p', 'o', base * st(2f), base * st(9f), 180, 0.8f)) // a perked-up "po?"
+            Kind.ALARM -> (0 until 3).flatMap { // "po-ke! po-ke! po-ke!" for a finished timer
+                listOf(
+                    Syl('p', 'o', base * st(3f), base * st(5f), 110),
+                    Syl('k', 'e', base * st(8f), base * st(12f), 150),
+                    Syl(' ', 'u', base, base, 160, 0f),
+                )
+            }
             Kind.SULK -> listOf(
                 Syl('p', 'o', base * st(-2f), base * st(-4f), 260, 0.6f),
                 Syl('k', 'e', base * st(-5f), base * st(-9f), 420, 0.5f),

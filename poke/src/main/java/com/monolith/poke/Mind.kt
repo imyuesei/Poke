@@ -415,7 +415,7 @@ object Mind {
                 if (asleep) wake(false)
                 show(Face.STARTLED, 1200)
                 doAct(Act.HOP)
-                Voice.chirp(ctx, Voice.Kind.STARTLED, this)
+                Voice.chirp(ctx, Voice.Kind.ALARM, this)
             }
             Event.THINKING -> {
                 if (asleep) wake(false)
@@ -492,6 +492,9 @@ object Mind {
         }
         return true
     }
+
+    /** Whole days since Poke was born. */
+    fun ageDays(): Long = (System.currentTimeMillis() - born) / 86_400_000L
 
     /** One line describing Poke's state, for the brain lab. */
     fun describe(): String {

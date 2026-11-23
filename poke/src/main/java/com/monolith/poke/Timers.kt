@@ -4,8 +4,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -13,12 +11,13 @@ import android.os.Vibrator
 
 /**
  * Poke's own timers. Opening the clock app from the background is blocked on modern Android,
- * so Poke counts itself (its island keeps it running), then rings: a notification with the
- * alarm sound, a buzz, a startled face and a bubble.
+ * so Poke counts itself (its island keeps it running). When time is up it calls out with its
+ * own "po-ke! po-ke!" (no ringtone), shows a silent notification, a startled face and a bubble.
  */
 object Timers {
     private val main = Handler(Looper.getMainLooper())
-    private const val CHANNEL = "poke_timers"
+    // a silent channel: the sound is Poke's own alarm call, not the phone's ringtone
+    private const val CHANNEL = "poke_timers_quiet"
     private var nextId = 100
 
     fun start(c: Context, seconds: Int, label: String) {
@@ -31,12 +30,11 @@ object Timers {
         Mind.onEvent(Mind.Event.TIMER)
         Mind.say("Ding ding! $label done!")
         val nm = c.getSystemService(NotificationManager::class.java) ?: return
-        val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        nm.deleteNotificationChannel("poke_timers") // the old one rang the ringtone
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "Poke timers", NotificationManager.IMPORTANCE_HIGH).apply {
-                setSound(sound, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
-                enableVibration(true)
+                setSound(null, null)
+                enableVibration(false)
             },
         )
         val n = Notification.Builder(c, CHANNEL)
@@ -51,7 +49,7 @@ object Timers {
         } catch (_: SecurityException) {
         }
         try {
-            c.getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300, 150, 300), -1))
+            c.getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 120, 120, 120), -1))
         } catch (_: Exception) {
         }
     }
