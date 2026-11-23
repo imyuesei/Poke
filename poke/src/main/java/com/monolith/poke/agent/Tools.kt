@@ -108,8 +108,15 @@ object GetWeather : Tool("get_weather", "Weather, temperature or rain for a city
         if (place.isBlank()) return done(Result(false, "Which place? Tell me your city once and I'll remember it."))
         thread {
             val r = try {
-                val geo = JSONObject(get("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + URLEncoder.encode(place, "UTF-8")))
-                val hit = geo.optJSONArray("results")?.optJSONObject(0)
+                // "cinnamara jorhat assam" isn't a single place name: try the whole, then its parts
+                val parts = place.split(Regex("[,]+|\\s+")).map { it.trim() }.filter { it.length > 2 }
+                val tries = (listOf(place) + parts).distinct()
+                var hit: JSONObject? = null
+                for (q in tries) {
+                    val geo = JSONObject(get("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + URLEncoder.encode(q, "UTF-8")))
+                    hit = geo.optJSONArray("results")?.optJSONObject(0)
+                    if (hit != null) break
+                }
                 if (hit == null) Result(false, "Couldn't find “$place”.") else {
                     val name = listOf(hit.optString("name"), hit.optString("country")).filter { it.isNotBlank() }.joinToString(", ")
                     val w = JSONObject(get("https://api.open-meteo.com/v1/forecast?latitude=${hit.getDouble("latitude")}&longitude=${hit.getDouble("longitude")}" +
