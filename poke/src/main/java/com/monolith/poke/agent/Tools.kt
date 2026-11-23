@@ -54,7 +54,7 @@ private val main = Handler(Looper.getMainLooper())
 
 // ---------------------------------------------------------------------- built-in tools
 
-object SetTimer : Tool("set_timer", "Start a countdown timer",
+object SetTimer : Tool("set_timer", "Start a countdown timer for some minutes or seconds, e.g. 'set a timer for 5 minutes'",
     JSONObject().put("minutes", int("minutes")).put("seconds", int("seconds"))) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val secs = args.optInt("minutes", 0) * 60 + args.optInt("seconds", 0)
@@ -79,7 +79,7 @@ object SetTimer : Tool("set_timer", "Start a countdown timer",
     }.joinToString(" ")
 }
 
-object SearchWeb : Tool("search_web", "Search the web", JSONObject().put("query", str("what to search for")), listOf("query")) {
+object SearchWeb : Tool("search_web", "Look something up on the internet, e.g. 'search for pizza places', 'google cactus compute'", JSONObject().put("query", str("what to search for")), listOf("query")) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val q = args.optString("query")
         if (q.isBlank()) return done(Result(false, "Nothing to search for."))
@@ -92,7 +92,7 @@ object SearchWeb : Tool("search_web", "Search the web", JSONObject().put("query"
     }
 }
 
-object CreateNote : Tool("create_note", "Save a note", JSONObject().put("text", str("the note")), listOf("text")) {
+object CreateNote : Tool("create_note", "Write down a note, e.g. 'note that the gate code is 4471', 'add milk to my notes'", JSONObject().put("text", str("the note")), listOf("text")) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val t = args.optString("text")
         if (t.isBlank()) return done(Result(false, "Empty note."))
@@ -101,8 +101,8 @@ object CreateNote : Tool("create_note", "Save a note", JSONObject().put("text", 
     }
 }
 
-object GetWeather : Tool("get_weather", "Get the current weather for a place",
-    JSONObject().put("location", str("city or place")), listOf("location")) {
+object GetWeather : Tool("get_weather", "Weather, temperature or rain for a city, e.g. 'weather in Paris', 'is it raining'",
+    JSONObject().put("location", str("a city or town name")), listOf("location")) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val place = args.optString("location")
         if (place.isBlank()) return done(Result(false, "Which place? Tell me your city once and I'll remember it."))
@@ -147,7 +147,7 @@ object GetWeather : Tool("get_weather", "Get the current weather for a place",
     }
 }
 
-object SendMessage : Tool("send_message", "Send a text message to a contact",
+object SendMessage : Tool("send_message", "Send a text message (SMS) to a contact, e.g. 'text Mom I'm late'",
     JSONObject().put("to", str("contact name or number")).put("text", str("the message")), listOf("to", "text"), confirm = true) {
     const val CONTACTS_REQUEST = 7
     private var pending: Triple<String, String, (Result) -> Unit>? = null
@@ -199,7 +199,7 @@ object SendMessage : Tool("send_message", "Send a text message to a contact",
 }
 
 /** Saves a fact about the user or their world (memory, Hermes' MEMORY.md / USER.md). */
-object Remember : Tool("remember", "Remember a fact the user tells about themselves or their world",
+object Remember : Tool("remember", "Store something the user says about themselves or their life, e.g. 'my name is Sam', 'I live in Berlin', 'my sister is Mia'",
     JSONObject().put("fact", str("the fact, in the user's words")), listOf("fact")) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val fact = args.optString("fact")
@@ -211,7 +211,7 @@ object Remember : Tool("remember", "Remember a fact the user tells about themsel
 }
 
 /** Finds something the user told before. */
-object Recall : Tool("recall", "Answer a question about something the user told before",
+object Recall : Tool("recall", "Answer a question about the user or something they said before, e.g. 'what is my name', 'where do I live'",
     JSONObject().put("query", str("what the user wants to know")), listOf("query")) {
     override fun run(a: Activity, args: JSONObject, done: (Result) -> Unit) {
         val q = args.optString("query")

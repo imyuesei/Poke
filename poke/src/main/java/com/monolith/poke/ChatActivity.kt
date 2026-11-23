@@ -191,7 +191,7 @@ class ChatActivity : Activity() {
         }
 
         override fun call(text: String, confidence: Double?, ms: Long, reasoning: String, held: Boolean) =
-            keep(Msg("needle", reasoning, call = text, confidence = confidence, ms = ms, held = held))
+            keep(Msg("needle", reasoning, call = text, confidence = confidence, ms = if (ms > 0) ms else null, held = held))
 
         override fun result(r: Result) = keep(Msg("result", (if (r.ok) "✓ " else "✗ ") + r.say, info = true))
 

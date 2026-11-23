@@ -46,19 +46,54 @@ class Agent(private val a: Activity, private val ui: Ui) {
     fun ask(query: String) {
         if (busy) return ui.info("Still working on the last message…")
         busy = true
+        Router.route(query)?.let { return routed(query, it) }
         Brain.async({
             val tools = Registry.select(a, query)
             val profile = Memory.asFacts(a)
             val system = Settings.system(a) + if (profile.isNotBlank()) "; $profile" else ""
             Brain.begin(a, system, Registry.schemas(tools))
-            Triple(Turn(query, system, tools), Brain.step(a, query), tools)
+            var thought = Brain.step(a, query)
+            var retried: String? = null
+            // elimination: Needle is unsure, so ask again without the tool it picked and keep
+            // whichever call is more confident
+            val conf = thought.raw.optDouble("confidence", 1.0)
+            val picked = (thought.firstCall ?: thought.raw.optJSONArray("suppressed_calls")?.optJSONObject(0))?.optString("name")
+            if (picked != null && conf < Settings.confidence(a) && tools.size > 1) {
+                val rest = tools.filter { it.name != picked }
+                Brain.begin(a, system, Registry.schemas(rest))
+                val second = Brain.step(a, query)
+                val conf2 = second.raw.optDouble("confidence", 0.0)
+                val got = second.firstCall ?: second.raw.optJSONArray("suppressed_calls")?.optJSONObject(0)
+                if (got != null && conf2 > conf) {
+                    thought = second
+                    retried = "unsure about $picked (${"%.2f".format(conf)}), asked again without it"
+                } else {
+                    Brain.begin(a, system, Registry.schemas(tools)) // back to the first conversation
+                    Brain.step(a, query)
+                }
+            }
+            Turn(query, system, tools) to (thought to (tools to retried))
         }) { r ->
-            val (turn, thought, tools) = r.getOrElse { e ->
+            val (turn, rest) = r.getOrElse { e ->
                 ui.none("Error: ${e.message}")
                 return@async finish()
             }
+            val (thought, more) = rest
+            val (tools, retried) = more
             ui.tools(tools.map { it.name })
+            retried?.let { ui.info(it) }
             handle(turn, thought, followUpTried = false)
+        }
+    }
+
+    /** A routed call (memory statements and questions): run it directly, no model needed. */
+    private fun routed(query: String, call: JSONObject) {
+        val tool = Registry.find(a, call.optString("name")) ?: return finish()
+        ui.info("router: ${tool.name}")
+        ui.call(format(call), null, 0, "", held = false)
+        tool.run(a, call.optJSONObject("arguments") ?: JSONObject()) { r ->
+            ui.result(r)
+            finish()
         }
     }
 
