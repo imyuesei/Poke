@@ -3,31 +3,21 @@ package com.monolith.poke
 import android.content.Context
 import org.json.JSONArray
 
-/** User settings: the tools Needle chooses between, extra facts for it, and voice input. */
+/** User settings: custom tools, facts for Needle, agent limits, and voice input. */
 object Settings {
     private fun p(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /**
-     * Needle 3 answers every message with a tool call chosen from these (or none). They are
-     * examples; edit them in settings. Needle works best with five tools or fewer, plain
-     * names and no shared prefixes.
+     * Extra tools you define (JSON, same shape as the built-ins). Needle can call them; they
+     * show the call but aren't connected to an action.
      */
-    val DEFAULT_TOOLS = """
-[
-  {"name": "get_weather", "description": "Get the weather for a place",
-   "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}},
-  {"name": "set_timer", "description": "Start a countdown timer",
-   "parameters": {"type": "object", "properties": {"minutes": {"type": "integer"}, "seconds": {"type": "integer"}}, "required": []}},
-  {"name": "send_message", "description": "Send a text message to a contact",
-   "parameters": {"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}}, "required": ["to", "text"]}},
-  {"name": "create_note", "description": "Save a note",
-   "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
-  {"name": "search_web", "description": "Search the web",
-   "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}
-]
-""".trim()
+    val DEFAULT_TOOLS = "[]"
 
-    fun tools(c: Context): String = p(c).getString("tools", DEFAULT_TOOLS) ?: DEFAULT_TOOLS
+    fun tools(c: Context): String {
+        val v = p(c).getString("tools", DEFAULT_TOOLS) ?: DEFAULT_TOOLS
+        // older versions stored copies of the built-in tools here; those now live in code
+        return if (v.contains("\"get_weather\"") && v.contains("\"search_web\"")) DEFAULT_TOOLS else v
+    }
 
     /** Saves the tools if they are a valid JSON array; returns an error message otherwise. */
     fun setTools(c: Context, json: String): String? = try {
@@ -55,6 +45,18 @@ object Settings {
     /** Seconds of silence that end one spoken message. */
     fun pauseSeconds(c: Context): Float = p(c).getFloat("pause", 1f)
     fun setPauseSeconds(c: Context, s: Float) = p(c).edit().putFloat("pause", s.coerceIn(0.5f, 3f)).apply()
+
+    /** Below this confidence the agent asks before running a call. */
+    fun confidence(c: Context): Float = p(c).getFloat("confidence", 0.5f)
+    fun setConfidence(c: Context, v: Float) = p(c).edit().putFloat("confidence", v.coerceIn(0f, 0.95f)).apply()
+
+    /** How many tool calls one message may lead to (Needle reads each result and may follow up). */
+    fun maxSteps(c: Context): Int = p(c).getInt("max_steps", 3)
+    fun setMaxSteps(c: Context, v: Int) = p(c).edit().putInt("max_steps", v.coerceIn(1, 6)).apply()
+
+    /** Show the agent's working (which tools it considered, profile fills) in the chat. */
+    fun showTrace(c: Context): Boolean = p(c).getBoolean("trace", true)
+    fun setShowTrace(c: Context, on: Boolean) = p(c).edit().putBoolean("trace", on).apply()
 
     fun system(c: Context): String {
         val date = java.text.SimpleDateFormat("yyyy-MM-dd EEE HH:mm", java.util.Locale.US).format(java.util.Date())

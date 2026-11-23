@@ -173,6 +173,37 @@ object Brain {
         val firstCall: JSONObject? get() = if (calls.length() > 0) calls.getJSONObject(0) else null
     }
 
+    // ------------------------------------------------------------------ multi-turn sessions
+
+    /** Starts a fresh Needle conversation over [toolsJson] (for the agent loop). Brain thread. */
+    fun begin(c: Context, system: String, toolsJson: String) {
+        load(c)
+        bind(system, toolsJson)
+        nativeReset()
+    }
+
+    /**
+     * One more turn in the current conversation: the user's message, or a tool result as JSON
+     * (Needle reads results and may make a follow-up call, or finish). Brain thread.
+     */
+    fun step(c: Context, text: String): Thought {
+        nativeSetThreads(threads(c, NEEDLE))
+        val t0 = SystemClock.elapsedRealtime()
+        val out = nativeComplete(text, 256)
+        val ms = SystemClock.elapsedRealtime() - t0
+        val json = try {
+            JSONObject(out)
+        } catch (_: Exception) {
+            JSONObject().put("success", false).put("error", out)
+        }
+        return Thought(json, ms)
+    }
+
+    /** Ends the conversation. Brain thread. */
+    fun end() {
+        if (loaded) nativeReset()
+    }
+
     /** One Needle turn over [toolsJson]; conversation state is reset afterwards. */
     fun think(c: Context, text: String, toolsJson: String, system: String): Thought {
         load(c)

@@ -14,6 +14,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.monolith.poke.agent.Memory
+import com.monolith.poke.agent.Notes
+import com.monolith.poke.agent.Registry
+import com.monolith.poke.agent.Skills
 import com.monolith.poke.brain.Brain
 import kotlin.concurrent.thread
 
@@ -59,33 +63,70 @@ class SettingsActivity : Activity() {
             { Settings.setPauseSeconds(this, Settings.pauseSeconds(this) - 0.25f) },
             { Settings.setPauseSeconds(this, Settings.pauseSeconds(this) + 0.25f) }))
 
-        // tools
-        header("NEEDLE'S TOOLS (JSON)")
-        col.addView(note("Needle answers each message with a call to one of these tools, or no call if none fits. " +
-            "Five tools or fewer with plain names work best. The built-in tools (set_timer, get_weather, search_web, " +
-            "send_message, create_note) carry out real actions; tools you add only show the call."))
-        val tools = EditText(this).apply {
-            setText(Settings.tools(this@SettingsActivity))
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            typeface = Typeface.MONOSPACE
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            isSingleLine = false
-            minLines = 8
-            gravity = Gravity.TOP
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = GradientDrawable().apply { setColor(0xFF1E2023.toInt()); cornerRadius = 12 * d }
-        }
+        // agent
+        header("AGENT")
+        col.addView(stepRow({ "Ask before running below confidence: ${"%.2f".format(Settings.confidence(this))}" },
+            { Settings.setConfidence(this, Settings.confidence(this) - 0.05f) },
+            { Settings.setConfidence(this, Settings.confidence(this) + 0.05f) }))
+        col.addView(stepRow({ "Steps per message: ${Settings.maxSteps(this)}" },
+            { Settings.setMaxSteps(this, Settings.maxSteps(this) - 1) },
+            { Settings.setMaxSteps(this, Settings.maxSteps(this) + 1) }))
+        val trace = button("") {}
+        fun showTrace() { trace.text = if (Settings.showTrace(this)) "Show the agent's working: on" else "Show the agent's working: off" }
+        trace.setOnClickListener { Settings.setShowTrace(this, !Settings.showTrace(this)); showTrace() }
+        showTrace()
+        col.addView(trace)
+        col.addView(note("All tools: " + Registry.all(this).joinToString(", ") { "${it.name} (${it.kind})" } +
+            ". For each message the 4 that fit best (by meaning) go to Needle."))
+
+        // skills
+        header("SKILLS (JSON)")
+        col.addView(note("A skill is a named tool made of steps that call other tools; {slots} are filled from the skill's " +
+            "arguments or your profile. Needle picks a skill by its description, like any tool."))
+        val skills = editor(Skills.json(this))
+        col.addView(skills)
+        val skillsMsg = note(Skills.all(this).joinToString("\n") { sk ->
+            val (runs, fails) = Skills.stats(this, sk.name)
+            "${sk.name}: run $runs×" + if (fails > 0) ", $fails with a failed step" else ""
+        })
+        col.addView(button("Save skills") {
+            val err = Skills.save(this, skills.text.toString())
+            skillsMsg.text = err?.let { "Not saved: $it" } ?: "Saved."
+        })
+        col.addView(button("Reset to example skill") {
+            Skills.reset(this)
+            skills.setText(Skills.json(this))
+            skillsMsg.text = "Reset."
+        })
+        col.addView(skillsMsg)
+
+        // memory
+        header("MEMORY")
+        val profile = Memory.profile(this)
+        val memFacts = Memory.facts(this)
+        col.addView(text(13f, 0xDDFFFFFF.toInt()).apply {
+            text = "Profile: " + (if (profile.length() == 0) "(empty — tell me your name and city)" else
+                profile.keys().asSequence().joinToString(", ") { "$it: ${profile.optString(it)}" }) +
+                "\n\nFacts:\n" + (if (memFacts.isEmpty()) "(none yet)" else memFacts.reversed().joinToString("\n") { "• ${it.text}" })
+            setTextIsSelectable(true)
+        })
+        col.addView(button("Forget everything I told you") { Memory.forget(this); recreate() })
+
+        // custom tools
+        header("CUSTOM TOOLS (JSON)")
+        col.addView(note("Extra tools Needle can call. They show the call but aren't connected to an action. " +
+            "Built-ins: set_timer, get_weather, search_web, send_message, create_note, remember, recall."))
+        val tools = editor(Settings.tools(this))
         col.addView(tools)
         val toolsMsg = note("")
         col.addView(button("Save tools") {
             val err = Settings.setTools(this, tools.text.toString())
             toolsMsg.text = err?.let { "Not saved: $it" } ?: "Saved."
         })
-        col.addView(button("Reset to example tools") {
+        col.addView(button("Clear custom tools") {
             Settings.resetTools(this)
             tools.setText(Settings.tools(this))
-            toolsMsg.text = "Reset."
+            toolsMsg.text = "Cleared."
         })
         col.addView(toolsMsg)
 
@@ -124,6 +165,19 @@ class SettingsActivity : Activity() {
         } catch (_: Exception) {
             ""
         }))
+    }
+
+    private fun editor(content: String) = EditText(this).apply {
+        setText(content)
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        typeface = Typeface.MONOSPACE
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        isSingleLine = false
+        minLines = 6
+        gravity = Gravity.TOP
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = GradientDrawable().apply { setColor(0xFF1E2023.toInt()); cornerRadius = 12 * d }
     }
 
     private fun refreshModels() {

@@ -20,6 +20,9 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.monolith.poke.agent.Agent
+import com.monolith.poke.agent.Result
+import com.monolith.poke.agent.SendMessage
 import com.monolith.poke.brain.Brain
 import org.json.JSONArray
 import org.json.JSONObject
@@ -142,8 +145,9 @@ class ChatActivity : Activity() {
 
     private fun intro() {
         val m = Msg("needle", "Hi. I'm Needle 3 running on your phone, with Whistle for speech.\n\n" +
-            "I don't write chat replies: for every message I pick one of the tools set in settings and fill in " +
-            "its arguments (or I make no call if none fits).\n\n" +
+            "I don't write replies: I pick a tool for your message, fill in its details and run it, and can follow up " +
+            "on the result. I can set timers, check the weather, search, draft messages, save notes, run skills, " +
+            "and remember things you tell me (tell me your name and city).\n\n" +
             (if (!Brain.hasModels(this)) "First, open settings and download the models (~52 MB)." else "Try: \"remind me to set a 5 minute timer\" or \"text Sam I'm running late\"."),
             info = true)
         show(m)
@@ -158,6 +162,8 @@ class ChatActivity : Activity() {
         ask(t, voice = null)
     }
 
+    private val agent by lazy { Agent(this, ui) }
+
     private fun ask(text: String, voice: Long?) {
         val mine = Msg("user", text, ms = voice, voice = voice != null)
         show(mine)
@@ -166,28 +172,41 @@ class ChatActivity : Activity() {
             show(Msg("needle", "Download the models in settings first.", info = true))
             return
         }
-        val pending = show(Msg("needle", "…", info = true))
-        Brain.async({ Brain.think(this, text, Settings.tools(this), Settings.system(this)) }) { r ->
-            list.removeView(pending)
-            val reply = r.fold(
-                onSuccess = { t -> Msg.fromThought(t.raw, t.ms) },
-                onFailure = { e -> Msg("needle", "Error: ${e.message}", info = true) },
-            )
-            show(reply)
-            History.add(this, reply)
-            refreshStatus()
-            // carry out the calls Needle made
-            val calls = r.getOrNull()?.raw?.optJSONArray("function_calls")
-            if (calls != null) for (i in 0 until calls.length()) execute(calls.getJSONObject(i))
-        }
+        thinking = show(Msg("needle", "…", info = true))
+        agent.ask(text)
     }
 
-    /** Runs one tool call and shows what happened. */
-    private fun execute(call: JSONObject) {
-        Tools.run(this, call) { result ->
-            val m = Msg("result", result, info = true)
-            show(m)
-            History.add(this, m)
+    private var thinking: View? = null
+
+    private fun keep(m: Msg) {
+        thinking?.let { list.removeView(it); thinking = null }
+        show(m)
+        History.add(this, m)
+    }
+
+    /** The agent's steps, as chat messages. */
+    private val ui = object : Agent.Ui {
+        override fun tools(names: List<String>) {
+            if (Settings.showTrace(this@ChatActivity)) keep(Msg("trace", "tools: " + names.joinToString(", "), info = true))
+        }
+
+        override fun call(text: String, confidence: Double?, ms: Long, reasoning: String, held: Boolean) =
+            keep(Msg("needle", reasoning, call = text, confidence = confidence, ms = ms, held = held))
+
+        override fun result(r: Result) = keep(Msg("result", (if (r.ok) "✓ " else "✗ ") + r.say, info = true))
+
+        override fun ask(question: String, yes: () -> Unit) {
+            thinking?.let { list.removeView(it); thinking = null }
+            show(Msg("ask", question, info = true, onYes = yes))
+        }
+
+        override fun none(text: String) = keep(Msg("needle", text, info = true))
+
+        override fun info(text: String) = keep(Msg("trace", text, info = true))
+
+        override fun done() {
+            thinking?.let { list.removeView(it); thinking = null }
+            refreshStatus()
         }
     }
 
@@ -234,7 +253,7 @@ class ChatActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startMic()
-        if (requestCode == Tools.CONTACTS_REQUEST) Tools.onContactsAnswered(this)
+        if (requestCode == SendMessage.CONTACTS_REQUEST) SendMessage.onContactsAnswered(this)
     }
 
     /** One spoken message: Whistle turns it into text. */
@@ -268,6 +287,8 @@ class ChatActivity : Activity() {
                 setColor(when {
                     mine -> 0xFF2B4C7E.toInt()
                     m.role == "result" -> 0xFF173326.toInt()
+                    m.role == "trace" -> 0xFF141518.toInt()
+                    m.role == "ask" -> 0xFF2E2716.toInt()
                     m.info -> 0xFF18191C.toInt()
                     else -> 0xFF1E2023.toInt()
                 })
@@ -285,7 +306,7 @@ class ChatActivity : Activity() {
         if (m.text.isNotBlank()) {
             bubble.addView(TextView(this).apply {
                 text = m.text
-                textSize = if (m.call != null) 13f else 15f
+                textSize = if (m.call != null || m.role == "trace") 12f else 15f
                 setTextColor(if (m.role == "result") 0xFFB8F0CF.toInt() else if (m.info) 0xBBFFFFFF.toInt() else Color.WHITE)
                 if (m.call != null) setTextColor(0xAAFFFFFF.toInt())
                 setTextIsSelectable(true)
@@ -304,22 +325,29 @@ class ChatActivity : Activity() {
                 setPadding(0, dp(4), 0, 0)
             })
         }
-        val held = m.pending
-        if (held != null) {
-            bubble.addView(TextView(this).apply {
-                text = "Run anyway"
+        val yes = m.onYes
+        if (yes != null) {
+            val buttons = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, 0)
+            }
+            fun choice(label: String, color: Int, action: () -> Unit) = TextView(this).apply {
+                text = label
                 textSize = 13f
                 setTextColor(0xFF0E0F11.toInt())
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setPadding(dp(14), dp(7), dp(14), dp(7))
-                background = GradientDrawable().apply { setColor(0xFFE8C46A.toInt()); cornerRadius = 16 * d }
+                setPadding(dp(16), dp(7), dp(16), dp(7))
+                background = GradientDrawable().apply { setColor(color); cornerRadius = 16 * d }
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                    .apply { topMargin = dp(8) }
+                    .apply { rightMargin = dp(8) }
                 setOnClickListener {
-                    visibility = View.GONE
-                    execute(held)
+                    buttons.visibility = View.GONE
+                    action()
                 }
-            })
+            }
+            buttons.addView(choice("Run", 0xFFE8C46A.toInt()) { yes() })
+            buttons.addView(choice("Cancel", 0xFFE8EAED.toInt()) { keep(Msg("trace", "Cancelled.", info = true)) })
+            bubble.addView(buttons)
         }
         val wrap = FrameLayout(this).apply { setPadding(0, dp(4), 0, dp(4)) }
         wrap.addView(bubble, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -348,8 +376,8 @@ class Msg(
     val voice: Boolean = false,
     val held: Boolean = false,
     val info: Boolean = false,
-    /** A call Needle held back, which can still be run (not saved in history). */
-    val pending: JSONObject? = null,
+    /** For a question from the agent: what Run does (not saved in history). */
+    val onYes: (() -> Unit)? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("role", role).put("text", text).put("call", call)
         .put("confidence", confidence).put("ms", ms).put("voice", voice).put("held", held).put("info", info)
@@ -362,37 +390,6 @@ class Msg(
             if (o.isNull("ms")) null else o.optLong("ms"),
             o.optBoolean("voice"), o.optBoolean("held"), o.optBoolean("info"),
         )
-
-        /** Turns Needle's answer into a message: the call (or a held-back one), its reasoning and confidence. */
-        fun fromThought(raw: JSONObject, ms: Long): Msg {
-            val conf = raw.optDouble("confidence", Double.NaN).takeIf { !it.isNaN() }
-            val reasoning = raw.optString("reasoning").takeIf { it.isNotBlank() && it != "null" } ?: ""
-            if (raw.optBoolean("success", true).not() && raw.has("error") && !raw.isNull("error")) {
-                return Msg("needle", "Error: ${raw.optString("error")}", ms = ms, info = true)
-            }
-            val calls = raw.optJSONArray("function_calls") ?: JSONArray()
-            if (calls.length() > 0) {
-                return Msg("needle", reasoning, call = (0 until calls.length()).joinToString("\n") { format(calls.getJSONObject(it)) },
-                    confidence = conf, ms = ms)
-            }
-            val held = raw.optJSONArray("suppressed_calls")
-            if (held != null && held.length() > 0) {
-                return Msg("needle", "Held back (not sure enough). " + reasoning, call = format(held.getJSONObject(0)),
-                    confidence = conf, ms = ms, held = true, pending = held.getJSONObject(0))
-            }
-            return Msg("needle", "No tool fits this message." + if (reasoning.isNotBlank()) "\n$reasoning" else "",
-                confidence = conf, ms = ms)
-        }
-
-        /** set_timer {"minutes":5} -> set_timer(minutes: 5) */
-        private fun format(call: JSONObject): String {
-            val args = call.optJSONObject("arguments") ?: JSONObject()
-            val parts = args.keys().asSequence().map { k ->
-                val v = args.get(k)
-                "$k: " + if (v is String) "\"$v\"" else v.toString()
-            }.toList()
-            return call.optString("name") + "(" + parts.joinToString(", ") + ")"
-        }
     }
 }
 
