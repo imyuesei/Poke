@@ -7,6 +7,10 @@ A chat app for **Needle 3** and **Whistle** by Cactus, running entirely on your 
 - Needle 3 answers every message with the **tool call** it picks from the tools you set in
   settings, with its arguments, confidence and reasoning, or with no call when none fits.
   (Needle is a tool-calling model; it doesn't write free-text replies.)
+- The built-in tools really run: **set_timer** starts a timer in your Clock app, **get_weather**
+  shows the current weather (Open-Meteo), **search_web** opens the browser, **send_message**
+  opens your messaging app with the contact and text filled in, **create_note** saves a note
+  (Settings → Notes). A call Needle held back can still be run with "Run anyway".
 - **Settings** (gear icon): download/load the models (~52 MB, checked against Cactus's
   published hashes), CPU threads per model, speech options, Needle's tools (JSON) and facts,
   clear chat.

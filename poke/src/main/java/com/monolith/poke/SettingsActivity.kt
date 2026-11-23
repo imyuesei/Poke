@@ -62,7 +62,8 @@ class SettingsActivity : Activity() {
         // tools
         header("NEEDLE'S TOOLS (JSON)")
         col.addView(note("Needle answers each message with a call to one of these tools, or no call if none fits. " +
-            "Five tools or fewer with plain names work best."))
+            "Five tools or fewer with plain names work best. The built-in tools (set_timer, get_weather, search_web, " +
+            "send_message, create_note) carry out real actions; tools you add only show the call."))
         val tools = EditText(this).apply {
             setText(Settings.tools(this@SettingsActivity))
             setTextColor(Color.WHITE)
@@ -100,6 +101,17 @@ class SettingsActivity : Activity() {
         }
         col.addView(facts)
         col.addView(button("Save facts") { Settings.setFacts(this, facts.text.toString()) })
+
+        // notes saved by create_note
+        header("NOTES")
+        val notes = Notes.all(this)
+        val fmt = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault())
+        col.addView(text(14f, 0xDDFFFFFF.toInt()).apply {
+            text = if (notes.isEmpty()) "(none yet — try “note that the wifi password is cactus42”)"
+            else notes.joinToString("\n\n") { "${fmt.format(java.util.Date(it.first))}\n${it.second}" }
+            setTextIsSelectable(true)
+        })
+        if (notes.isNotEmpty()) col.addView(button("Delete all notes") { Notes.clear(this); recreate() })
 
         // chat
         header("CHAT")

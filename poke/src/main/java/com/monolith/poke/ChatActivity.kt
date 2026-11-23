@@ -176,6 +176,18 @@ class ChatActivity : Activity() {
             show(reply)
             History.add(this, reply)
             refreshStatus()
+            // carry out the calls Needle made
+            val calls = r.getOrNull()?.raw?.optJSONArray("function_calls")
+            if (calls != null) for (i in 0 until calls.length()) execute(calls.getJSONObject(i))
+        }
+    }
+
+    /** Runs one tool call and shows what happened. */
+    private fun execute(call: JSONObject) {
+        Tools.run(this, call) { result ->
+            val m = Msg("result", result, info = true)
+            show(m)
+            History.add(this, m)
         }
     }
 
@@ -222,6 +234,7 @@ class ChatActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startMic()
+        if (requestCode == Tools.CONTACTS_REQUEST) Tools.onContactsAnswered(this)
     }
 
     /** One spoken message: Whistle turns it into text. */
@@ -252,7 +265,12 @@ class ChatActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(10))
             background = GradientDrawable().apply {
-                setColor(if (mine) 0xFF2B4C7E.toInt() else if (m.info) 0xFF18191C.toInt() else 0xFF1E2023.toInt())
+                setColor(when {
+                    mine -> 0xFF2B4C7E.toInt()
+                    m.role == "result" -> 0xFF173326.toInt()
+                    m.info -> 0xFF18191C.toInt()
+                    else -> 0xFF1E2023.toInt()
+                })
                 cornerRadius = 18 * d
             }
         }
@@ -268,7 +286,7 @@ class ChatActivity : Activity() {
             bubble.addView(TextView(this).apply {
                 text = m.text
                 textSize = if (m.call != null) 13f else 15f
-                setTextColor(if (m.info) 0xBBFFFFFF.toInt() else Color.WHITE)
+                setTextColor(if (m.role == "result") 0xFFB8F0CF.toInt() else if (m.info) 0xBBFFFFFF.toInt() else Color.WHITE)
                 if (m.call != null) setTextColor(0xAAFFFFFF.toInt())
                 setTextIsSelectable(true)
             })
@@ -284,6 +302,23 @@ class ChatActivity : Activity() {
                 textSize = 11f
                 setTextColor(0x88FFFFFF.toInt())
                 setPadding(0, dp(4), 0, 0)
+            })
+        }
+        val held = m.pending
+        if (held != null) {
+            bubble.addView(TextView(this).apply {
+                text = "Run anyway"
+                textSize = 13f
+                setTextColor(0xFF0E0F11.toInt())
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setPadding(dp(14), dp(7), dp(14), dp(7))
+                background = GradientDrawable().apply { setColor(0xFFE8C46A.toInt()); cornerRadius = 16 * d }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dp(8) }
+                setOnClickListener {
+                    visibility = View.GONE
+                    execute(held)
+                }
             })
         }
         val wrap = FrameLayout(this).apply { setPadding(0, dp(4), 0, dp(4)) }
@@ -313,6 +348,8 @@ class Msg(
     val voice: Boolean = false,
     val held: Boolean = false,
     val info: Boolean = false,
+    /** A call Needle held back, which can still be run (not saved in history). */
+    val pending: JSONObject? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("role", role).put("text", text).put("call", call)
         .put("confidence", confidence).put("ms", ms).put("voice", voice).put("held", held).put("info", info)
@@ -341,7 +378,7 @@ class Msg(
             val held = raw.optJSONArray("suppressed_calls")
             if (held != null && held.length() > 0) {
                 return Msg("needle", "Held back (not sure enough). " + reasoning, call = format(held.getJSONObject(0)),
-                    confidence = conf, ms = ms, held = true)
+                    confidence = conf, ms = ms, held = true, pending = held.getJSONObject(0))
             }
             return Msg("needle", "No tool fits this message." + if (reasoning.isNotBlank()) "\n$reasoning" else "",
                 confidence = conf, ms = ms)
