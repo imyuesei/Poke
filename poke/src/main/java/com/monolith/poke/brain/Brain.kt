@@ -53,6 +53,21 @@ object Brain {
     private var currentSystem: String? = null
 
     fun modelFile(c: Context, m: Model) = File(File(c.filesDir, "models"), m.name)
+
+    // ------------------------------------------------------------------ CPU threads (per model)
+
+    val cores: Int get() = Runtime.getRuntime().availableProcessors()
+
+    /** CPU threads for [m]; 0 lets the engine use every core it may. */
+    fun threads(c: Context, m: Model): Int =
+        c.getSharedPreferences("poke_brain", Context.MODE_PRIVATE).getInt("threads_" + m.name, 0)
+
+    /** Saves a thread count; the brain reloads with it the next time it's used. */
+    fun setThreads(c: Context, m: Model, n: Int) {
+        c.getSharedPreferences("poke_brain", Context.MODE_PRIVATE).edit()
+            .putInt("threads_" + m.name, n.coerceIn(0, cores)).apply()
+        worker.execute { loaded = false }
+    }
     fun hasModels(c: Context) = MODELS.all { modelFile(c, it).let { f -> f.exists() && f.length() > 0 } }
 
     /** Runs [block] on the brain thread and posts the result back through [done]. */
@@ -134,6 +149,8 @@ object Brain {
         check(hasModels(c)) { "The brain isn't downloaded yet." }
         val t0 = SystemClock.elapsedRealtime()
         for (m in MODELS) {
+            // the engine binds the thread count to each model as it loads
+            nativeSetThreads(threads(c, m))
             val bytes = modelFile(c, m).readBytes()
             if (nativeLoad(bytes) < 0) throw IllegalStateException("${m.name}: ${nativeLastError()}")
         }
@@ -160,6 +177,7 @@ object Brain {
     fun think(c: Context, text: String, toolsJson: String, system: String): Thought {
         load(c)
         bind(system, toolsJson)
+        nativeSetThreads(threads(c, NEEDLE))
         val t0 = SystemClock.elapsedRealtime()
         val out = nativeComplete(text, 256)
         val ms = SystemClock.elapsedRealtime() - t0
@@ -177,6 +195,7 @@ object Brain {
     /** Whistle: 16 kHz mono float samples (up to 30 s) to text. */
     fun hear(c: Context, samples: FloatArray, keywords: String? = null): Heard {
         load(c)
+        nativeSetThreads(threads(c, WHISTLE))
         val t0 = SystemClock.elapsedRealtime()
         val out = nativeTranscribe(samples, "en", keywords)
         val ms = SystemClock.elapsedRealtime() - t0
@@ -191,6 +210,7 @@ object Brain {
     /** Needle 3 text embedding (for memory search), or null if unavailable. */
     fun embed(c: Context, text: String): FloatArray? {
         load(c)
+        nativeSetThreads(threads(c, NEEDLE))
         return nativeEmbed(text)
     }
 

@@ -23,6 +23,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.monolith.poke.Mind
 import com.monolith.poke.Voice
+import com.monolith.poke.ears.Ears
+import com.monolith.poke.ears.EarsService
 import kotlin.concurrent.thread
 
 /**
@@ -37,6 +39,7 @@ class BrainActivity : Activity() {
     private lateinit var memory: TextView
     private lateinit var input: EditText
     private lateinit var talk: TextView
+    private lateinit var wake: TextView
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var recording = false
     private var busy = false
@@ -77,6 +80,17 @@ class BrainActivity : Activity() {
         col.addView(button("download / load brain") { prepare() })
         col.addView(gap(16))
 
+        // settings: CPU threads per model, and the wake word
+        col.addView(text(12f, 0x88FFFFFF.toInt()).apply { text = "SETTINGS" })
+        for (m in Brain.MODELS) col.addView(threadRow(m, ::dp))
+        wake = button("") { EarsService.setWakeWord(this, !EarsService.wakeWordOn(this)); refreshWake() }
+        col.addView(wake)
+        col.addView(text(11f, 0x77FFFFFF.toInt()).apply {
+            text = "Hold the island and talk to Poke anytime. The wake word lets you say \"Poke, …\" while the " +
+                "screen is on; it uses more battery. Threads: more is faster until the phone gets hot; auto uses every core."
+        })
+        col.addView(gap(16))
+
         input = EditText(this).apply {
             hint = "tell poke something…  e.g. I parked on level 3 near the blue pillar"
             setHintTextColor(0x66FFFFFF)
@@ -113,6 +127,7 @@ class BrainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { setBackgroundColor(BG); addView(col) })
         refresh()
+        refreshWake()
         main.post(pulse)
     }
 
@@ -129,6 +144,48 @@ class BrainActivity : Activity() {
         super.onDestroy()
     }
 
+    private fun threadRow(m: Brain.Model, dp: (Int) -> Int): LinearLayout {
+        val label = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        fun show() {
+            val n = Brain.threads(this, m)
+            val who = if (m == Brain.NEEDLE) "Needle (thinking)" else "Whistle (hearing)"
+            label.text = "$who threads: ${if (n == 0) "auto" else n.toString()}  (of ${Brain.cores})"
+        }
+        fun step(label: String, d: Int) = TextView(this).apply {
+            text = label
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF0E0F11.toInt())
+            background = GradientDrawable().apply { setColor(0xFFEFF6FA.toInt()); cornerRadius = 20 * resources.displayMetrics.density }
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(40)).apply { leftMargin = dp(8) }
+            setOnClickListener {
+                Brain.setThreads(this@BrainActivity, m, Brain.threads(this@BrainActivity, m) + d)
+                show()
+                refresh()
+            }
+        }
+        show()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addView(label)
+            addView(step("−", -1))
+            addView(step("+", 1))
+        }
+    }
+
+    private fun refreshWake() {
+        wake.text = if (EarsService.wakeWordOn(this)) "wake word \"Poke\": on" else "wake word \"Poke\": off"
+        if (EarsService.wakeWordOn(this) && !Ears.hasMic(this)) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 3)
+        }
+    }
+
     private fun refresh() {
         val engine = if (Brain.engineBuilt) "engine ✓" else "engine ✗ (not in this build)"
         val models = Brain.MODELS.joinToString("  ") { m ->
@@ -137,7 +194,8 @@ class BrainActivity : Activity() {
         }
         val loaded = if (Brain.loaded) "loaded in ${Brain.loadMs} ms" else "not loaded"
         status.text = "$engine · $loaded\n$models"
-        memory.text = Memory.summary(this)
+        memory.text = Memory.summary(this) + "\n\nEPISODES (${Episodes.count(this)})\n" +
+            Episodes.recent(this, 25).joinToString("\n")
     }
 
     private fun prepare() {
@@ -149,7 +207,7 @@ class BrainActivity : Activity() {
                 Brain.download(this) { msg -> main.post { status.text = msg } }
                 Brain.async({ Brain.load(this) }) { r ->
                     busy = false
-                    r.exceptionOrNull()?.let { said.text = "Po…?"; detail.text = "load failed: ${it.message}" }
+                    r.exceptionOrNull()?.let { said.text = "Hmm?"; detail.text = "load failed: ${it.message}" }
                     refresh()
                 }
             } catch (e: Exception) {
@@ -173,10 +231,13 @@ class BrainActivity : Activity() {
         said.text = "…"
         Brain.async({
             val thought = Brain.think(this, text, Skills.TOOLS, Skills.system())
-            thought to Skills.act(this, thought)
+            val reply = Skills.act(this, thought)
+            Episodes.log(this, "heard", text, reply.detail, runCatching { Brain.embed(this, text) }.getOrNull())
+            thought to reply
         }) { r ->
             r.onSuccess { (thought, reply) ->
                 said.text = reply.words
+                Mind.say(reply.words)
                 Voice.say(this, reply.words, Mind)
                 val call = thought.firstCall?.toString() ?: thought.raw.optJSONArray("suppressed_calls")?.toString() ?: "none"
                 detail.text = buildString {
@@ -191,7 +252,7 @@ class BrainActivity : Activity() {
                 }
                 refresh()
             }.onFailure {
-                said.text = "Po…?"
+                said.text = "Hmm?"
                 detail.text = "error: ${it.message}"
             }
         }
@@ -251,12 +312,12 @@ class BrainActivity : Activity() {
                 Brain.async({ Brain.hear(this, samples, "Poke") }) { r ->
                     r.onSuccess { h ->
                         if (h.text.isBlank()) {
-                            said.text = "Po…?"
+                            said.text = "Hmm?"
                             detail.text = "whistle heard nothing (${h.ms} ms) ${h.raw.optString("error")}"
                         } else {
                             understand(h.text, h.ms)
                         }
-                    }.onFailure { said.text = "Po…?"; detail.text = "error: ${it.message}" }
+                    }.onFailure { said.text = "Hmm?"; detail.text = "error: ${it.message}" }
                 }
             }
         }
@@ -281,12 +342,12 @@ class BrainActivity : Activity() {
             }
         }) { r ->
             r.onSuccess { rows ->
-                said.text = "Poke think fast!"
+                said.text = "Me think fast!"
                 detail.text = rows.joinToString("\n") { (row, c) ->
                     "${row.second} ms  ${row.third}  ${if (c.isNaN()) "" else "%.2f".format(c)}  \"${row.first}\""
                 } + "\navg ${rows.map { it.first.second }.average().toInt()} ms"
                 refresh()
-            }.onFailure { said.text = "Po…?"; detail.text = "error: ${it.message}" }
+            }.onFailure { said.text = "Hmm?"; detail.text = "error: ${it.message}" }
         }
     }
 

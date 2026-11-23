@@ -137,7 +137,47 @@ object IslandWindow {
         }
         return try {
             w.addView(v, params)
+            v.bubble = addBubble(c, w, type, geo)
             v
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** A small speech bubble under the island for what Poke says (taps pass through it). */
+    private fun addBubble(c: Context, w: WindowManager, type: Int, geo: Geometry): android.widget.TextView? {
+        val d = c.resources.displayMetrics.density
+        val screenW = c.resources.displayMetrics.widthPixels
+        val tv = android.widget.TextView(c).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 14f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding((14 * d).toInt(), (8 * d).toInt(), (14 * d).toInt(), (9 * d).toInt())
+            maxWidth = (screenW * 0.8f).toInt()
+            gravity = Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xF0000000.toInt())
+                cornerRadius = 18 * d
+            }
+            alpha = 0f
+            visibility = View.GONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            x = geo.left + geo.width / 2 - screenW / 2
+            y = geo.height + geo.bounce + (6 * d).toInt()
+            if (Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        return try {
+            w.addView(tv, params)
+            tv
         } catch (_: Exception) {
             null
         }
@@ -146,6 +186,10 @@ object IslandWindow {
     fun remove(w: WindowManager?, v: Island?) {
         if (v == null) return
         v.stop()
+        try {
+            v.bubble?.let { w?.removeView(it) }
+        } catch (_: Exception) {
+        }
         try {
             w?.removeView(v)
         } catch (_: Exception) {
@@ -186,7 +230,7 @@ class Geometry(val left: Int, val width: Int, val height: Int, val lensLeft: Flo
 /**
  * The island itself: a black shape flush with the top edge (flat top, rounded bottom), like
  * Monolith's, with Poke's eyes either side of the camera. Tap = happy, two taps = startled,
- * hold = petted.
+ * hold = petted, and while held Poke listens: talk to it and let go.
  */
 @SuppressLint("ViewConstructor")
 class Island(c: Context, private val geo: Geometry) : View(c) {
@@ -199,6 +243,12 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
     private var squish = 0f
     private var running = true
     private var holding = false
+    /** The speech bubble window under the island (set by [IslandWindow]). */
+    var bubble: android.widget.TextView? = null
+    private var shownSerial = Mind.saidSerial
+    private val hideBubble = Runnable {
+        bubble?.animate()?.alpha(0f)?.setDuration(250)?.withEndAction { bubble?.visibility = GONE }?.start()
+    }
 
     private val gestures = GestureDetector(c, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
@@ -216,6 +266,8 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
             holding = true
             pet.pet(true)
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            // held: Poke listens until you let go
+            com.monolith.poke.ears.Ears.startHeld(context)
             wake()
         }
     })
@@ -224,7 +276,24 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
         isHapticFeedbackEnabled = true
     }
 
-    private val mindChanged: () -> Unit = { post { wake() } }
+    private val mindChanged: () -> Unit = {
+        post {
+            if (Mind.saidSerial != shownSerial) {
+                shownSerial = Mind.saidSerial
+                showBubble(Mind.said)
+            }
+            wake()
+        }
+    }
+
+    private fun showBubble(text: String) {
+        val b = bubble ?: return
+        removeCallbacks(hideBubble)
+        b.text = text
+        b.visibility = VISIBLE
+        b.animate().alpha(1f).setDuration(180).start()
+        postDelayed(hideBubble, 2500L + text.length * 70L)
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -264,6 +333,7 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
     fun stop() {
         running = false
         removeCallbacks(loop)
+        removeCallbacks(hideBubble)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -271,6 +341,7 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
         gestures.onTouchEvent(e)
         if ((e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) && holding) {
             holding = false
+            com.monolith.poke.ears.Ears.stopHeld()
             pet.pet(false)
             wake()
         }

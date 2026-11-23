@@ -95,6 +95,16 @@ class PokeActivity : Activity() {
         if (PokeService.enabled(this) && Settings.canDrawOverlays(this)) PokeService.start(this)
         refresh()
         Updater.check(this, this)
+        // Poke's ears: ask for the microphone once, and wake the ears service while we're in front
+        val prefs = getSharedPreferences("poke", MODE_PRIVATE)
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (!prefs.getBoolean("asked_mic", false)) {
+                prefs.edit().putBoolean("asked_mic", true).apply()
+                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 4)
+            }
+        } else {
+            com.monolith.poke.ears.EarsService.ensure(this)
+        }
     }
 
     private fun isOn() = PokeService.enabled(this) &&

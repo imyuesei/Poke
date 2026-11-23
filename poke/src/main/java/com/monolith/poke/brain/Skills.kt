@@ -229,10 +229,10 @@ object Caveman {
         val i = thing(item)
         val p = place(where)
         return when (tone()) {
-            Tone.HAPPY -> pick("Poke remember! $i: $p.", "Ooh! $i... $p. Poke keep in head!")
-            Tone.GRUMPY -> pick("Hmph. $i. $p. Poke remember.", "Fine. $i, $p. Poke keep.")
-            Tone.SLEEPY -> pick("Mmm... $i... $p... Poke keep.", "$i... $p... zzz... Poke remember.")
-            Tone.PLAIN -> pick("$i: $p. Poke remember.", "Poke keep. $i... $p.")
+            Tone.HAPPY -> pick("Me remember! $i: $p.", "Ooh! $i... $p. Me keep in head!")
+            Tone.GRUMPY -> pick("Hmph. $i. $p. Me remember.", "Fine. $i, $p. Me keep.")
+            Tone.SLEEPY -> pick("Mmm... $i... $p... Me keep.", "$i... $p... zzz... Me remember.")
+            Tone.PLAIN -> pick("$i: $p. Me remember.", "Me keep. $i... $p.")
         }
     }
 
@@ -240,7 +240,7 @@ object Caveman {
         val i = thing(item)
         val p = place(where)
         return when (tone()) {
-            Tone.HAPPY -> pick("Poke know! $i — $p!", "$i? $p! Poke good memory!")
+            Tone.HAPPY -> pick("Me know! $i — $p!", "$i? $p! Me good memory!")
             Tone.GRUMPY -> pick("Hmph. $i. $p.", "Again? $i... $p.")
             Tone.SLEEPY -> pick("Mmm... $i... $p...", "$i... $p... zzz.")
             Tone.PLAIN -> pick("$i... $p.", "$i there. $p.")
@@ -250,8 +250,8 @@ object Caveman {
     fun notFound(item: String): String {
         val i = thing(item)
         return when (tone()) {
-            Tone.GRUMPY -> pick("$i? Poke not know. You no tell Poke.", "Hmph. No $i in head.")
-            else -> pick("$i? Poke no know...", "Poke not see $i. You tell Poke?")
+            Tone.GRUMPY -> pick("$i? Me no know. You no tell me.", "Hmph. No $i in head.")
+            else -> pick("$i? Me no know...", "Me not see $i. You tell me?")
         }
     }
 
@@ -259,22 +259,22 @@ object Caveman {
         val s = thing(subject)
         val f = place(fact)
         return when (tone()) {
-            Tone.HAPPY -> pick("Poke learn! $s... $f!", "Ooh. $s: $f. Poke smart now!")
-            Tone.GRUMPY -> pick("Hmph. $s, $f. Okay.", "Poke learn. $s... $f.")
-            else -> pick("$s... $f. Poke learn.", "Poke keep. $s: $f.")
+            Tone.HAPPY -> pick("Me learn! $s... $f!", "Ooh. $s: $f. Me smart now!")
+            Tone.GRUMPY -> pick("Hmph. $s, $f. Okay.", "Me learn. $s... $f.")
+            else -> pick("$s... $f. Me learn.", "Me keep. $s: $f.")
         }
     }
 
     fun feeling(f: String): String = when (f) {
-        "praise" -> pick("Poke good! Poke good!", "Hehe. Poke best.")
-        "scold" -> if (tone() == Tone.GRUMPY) pick("Hmph.", "Poke no like.") else pick("Poke sorry...", "Po... sorry.")
-        "greeting" -> pick("Poke! Poke!", "Hi hi! Poke here!")
-        "goodnight" -> pick("Night night. Poke sleep too.", "Mmm. Sleep. Poke dream.")
-        "love" -> pick("Poke love too...", "Poke happy. Poke stay.")
-        else -> pick("Play! Poke play!", "Poke-poke! Again!")
+        "praise" -> pick("Me good! Hehe!", "Hehe. Me best.")
+        "scold" -> if (tone() == Tone.GRUMPY) pick("Hmph.", "Me no like.") else pick("Me sorry...", "Po... sorry.")
+        "greeting" -> pick("Hi hi!", "Hi! Me here!")
+        "goodnight" -> pick("Night night. Me sleep too.", "Mmm. Sleep. Me dream.")
+        "love" -> pick("Me love too...", "Me happy. Me stay.")
+        else -> pick("Play! Me play!", "Again! Again!")
     }
 
-    fun timer(m: Int): String = if (m <= 0) confused() else pick("Poke count! $m minute.", "Okay okay. $m minute. Poke watch.")
+    fun timer(m: Int): String = if (m <= 0) confused() else pick("Me count! $m minute.", "Okay okay. $m minute. Me watch.")
 
-    fun confused(): String = pick("Po...?", "Poke no understand.", "Hmm? Poke?")
+    fun confused(): String = pick("Hmm?", "Huh? Me no understand.", "Uhh… what?")
 }

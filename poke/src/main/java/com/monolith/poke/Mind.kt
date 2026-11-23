@@ -38,6 +38,7 @@ object Mind {
         POKE, DOUBLE_POKE, HOLD_START, HOLD_END,
         UNLOCK, SCREEN_ON, SCREEN_OFF, CHARGING, UNPLUGGED, BATTERY_LOW, HEADSET,
         PRAISE, SCOLD, GREETING, GOODNIGHT, LOVE, PLAY, TAUGHT, CONFUSED,
+        WAKE, THINKING,
     }
 
     /** Trait order in [traits]. */
@@ -75,6 +76,11 @@ object Mind {
     @Volatile var actX = 0f
         private set
     @Volatile var actY = 0f
+        private set
+    /** The last thing Poke said (for the speech bubble); [saidSerial] increments each time. */
+    @Volatile var said = ""
+        private set
+    @Volatile var saidSerial = 0
         private set
 
     private var faceUntil = 0L
@@ -298,9 +304,12 @@ object Mind {
                 mood(0.2f, -0.05f)
                 nudge(AFFECTIONATE, 0.006f)
                 nudge(GRUMPY, -0.004f)
+                // quiet while held: Poke is listening
+            }
+            Event.HOLD_END -> {
+                show(Face.CONTENT, 1600)
                 Voice.chirp(ctx, Voice.Kind.PURR, this)
             }
-            Event.HOLD_END -> show(Face.CONTENT, 1600)
             Event.UNLOCK -> if (!asleep) {
                 if (attention > 0.5f) {
                     show(Face.HAPPY, 1200)
@@ -375,6 +384,7 @@ object Mind {
                 if (asleep) wake(false)
                 show(Face.CONTENT, 1500)
                 doAct(Act.BLINK)
+                Voice.chirp(ctx, Voice.Kind.PROUD, this)
                 mood(0.08f, 0.1f)
                 curiosity = clamp01(curiosity - 0.3f)
             }
@@ -382,12 +392,42 @@ object Mind {
                 doAct(Act.TILT)
                 Voice.chirp(ctx, Voice.Kind.CONFUSED, this)
             }
+            Event.WAKE -> {
+                if (asleep) wake(false)
+                doAct(Act.LOOK)
+                show(Face.STARTLED, 500)
+                Voice.chirp(ctx, Voice.Kind.LISTEN, this)
+            }
+            Event.THINKING -> {
+                if (asleep) wake(false)
+                doAct(Act.GLANCE, 0.3f, -0.8f) // looks up while it thinks
+            }
         }
+        logEpisode(e)
         nextBehaviour = max(nextBehaviour, n + 2500)
         changed()
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** Poke says [text]: it shows in the bubble under the island. */
+    fun say(text: String) {
+        said = text
+        saidSerial++
+        changed()
+    }
+
+    private val lastLogged = mutableMapOf<Event, Long>()
+
+    /** Social moments and phone life go into the episodic memory (pokes at most every 15 s). */
+    private fun logEpisode(e: Event) {
+        val c = ctx ?: return
+        if (e == Event.THINKING || e == Event.SCREEN_ON || e == Event.SCREEN_OFF || e == Event.HOLD_END) return
+        val now = System.currentTimeMillis()
+        if (now - (lastLogged[e] ?: 0L) < 15_000L) return
+        lastLogged[e] = now
+        com.monolith.poke.brain.Episodes.log(c, "event", e.name.lowercase(), "")
+    }
 
     fun show(f: Face, ms: Long) {
         face = f
