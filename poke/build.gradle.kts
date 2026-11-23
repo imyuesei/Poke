@@ -22,6 +22,8 @@ android {
             cmake {
                 cppFlags += listOf("-std=c++17", "-O2")
                 arguments += listOf("-DANDROID_STL=c++_static")
+                // only Poke's library (not eSpeak NG's tools and tests)
+                targets += listOf("pokebrain")
             }
         }
     }
