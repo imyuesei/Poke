@@ -1,4 +1,4 @@
-name: Build Poke APK
+name: Build Needle Chat APK
 
 on:
   push:
@@ -34,21 +34,6 @@ jobs:
           ls -la poke/src/main/cpp/cactus/android-arm64
           find poke/src/main/cpp/cactus -name "*.h" -exec head -80 {} \;
 
-      - name: Fetch and prepare eSpeak NG
-        run: |
-          git clone --quiet --depth 1 --branch 1.52.0 https://github.com/espeak-ng/espeak-ng poke/src/main/cpp/espeak-ng
-          # its phoneme data and English dictionary are compiled with a native build
-          cmake -S poke/src/main/cpp/espeak-ng -B /tmp/espeak-native -DUSE_MBROLA=OFF -DUSE_LIBSONIC=OFF \
-            -DUSE_LIBPCAUDIO=OFF -DCMAKE_BUILD_TYPE=Release > /dev/null
-          cmake --build /tmp/espeak-native -j4 --target data > /dev/null
-          D=/tmp/espeak-native/espeak-ng-data
-          A=poke/src/main/assets/espeak-ng-data
-          mkdir -p $A/lang/gmw $A/voices
-          cp $D/phontab $D/phonindex $D/phondata $D/intonations $D/en_dict $A/
-          cp $D/lang/gmw/en* $A/lang/gmw/
-          cp -r "$D/voices/!v" $A/voices/
-          du -sh $A
-
       - name: Build APK
         run: |
           chmod +x gradlew
@@ -73,6 +58,6 @@ jobs:
           gh release delete latest --yes --cleanup-tag || true
           gh release create "v$CODE" poke.apk \
             --target "${{ github.sha }}" \
-            --title "Poke 1.0.$CODE" \
+            --title "Needle Chat 1.0.$CODE" \
             --latest \
-            --notes "Poke 1.0.$CODE. Poke updates itself; to install by hand, download poke.apk below."
+            --notes "Needle Chat 1.0.$CODE. The app updates itself; to install by hand, download poke.apk below."

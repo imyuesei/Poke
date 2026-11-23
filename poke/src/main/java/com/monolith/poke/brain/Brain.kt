@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /**
- * Poke's brain: the Cactus 4 engine running Needle 3 (understanding: tool calls, extraction,
+ * The on-device brain: the Cactus 4 engine running Needle 3 (understanding: tool calls, extraction,
  * embeddings) and Whistle (ears: speech to text), fully on the phone.
  *
  * The weights are fetched once from Hugging Face at the exact revisions the official
@@ -96,7 +96,7 @@ object Brain {
                 conn.instanceFollowRedirects = false
                 conn.connectTimeout = 20000
                 conn.readTimeout = 60000
-                conn.setRequestProperty("User-Agent", "Poke")
+                conn.setRequestProperty("User-Agent", "NeedleChat")
                 val code = conn.responseCode
                 if (code in 300..399 && hops < 5) {
                     // Hugging Face redirects to its CDN, sometimes across hosts

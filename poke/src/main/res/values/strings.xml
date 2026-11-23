@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">Poke</string>
-    <string name="acc_desc">Lets Poke\'s island sit above the status bar so you can tap, double-tap and hold it. Poke does not read anything on your screen; it only notices which app is open, to form its own opinions about your apps. Nothing leaves your phone.</string>
+    <string name="app_name">Needle Chat</string>
 </resources>

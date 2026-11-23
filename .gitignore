@@ -5,5 +5,3 @@ local.properties
 .idea/
 poke/src/main/cpp/cactus/
 .cxx/
-poke/src/main/cpp/espeak-ng/
-poke/src/main/assets/espeak-ng-data/

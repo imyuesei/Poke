@@ -1,7 +1,8 @@
 <resources>
-    <style name="Theme.Poke" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#FF101113</item>
-        <item name="android:statusBarColor">#FF5F86A3</item>
-        <item name="android:navigationBarColor">#FF101113</item>
+    <style name="Theme.Chat" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF0F1012</item>
+        <item name="android:statusBarColor">#FF0F1012</item>
+        <item name="android:navigationBarColor">#FF0F1012</item>
+        <item name="android:colorAccent">#FF8AB4F8</item>
     </style>
 </resources>

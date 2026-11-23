@@ -1,29 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Poke lives in a little island drawn over other apps. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Poke updates itself from its GitHub releases. -->
+    <!-- Model downloads and self-updates. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Poke's ears (Whistle runs on the phone; audio never leaves it). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Speech recognition with Whistle (on the phone; audio never leaves it). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <!-- Tricks: do not disturb on/off -->
-    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-
-    <!-- Tricks can open your apps, and Poke has opinions about them: it needs to see their names. -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent>
-    </queries>
 
     <application
         android:allowBackup="true"
@@ -31,12 +14,12 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Poke">
+        android:theme="@style/Theme.Chat">
 
         <activity
-            android:name=".PokeActivity"
+            android:name=".ChatActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -44,60 +27,13 @@
         </activity>
 
         <activity
-            android:name=".brain.BrainActivity"
+            android:name=".SettingsActivity"
             android:exported="false"
-            android:label="Poke's brain"
-            android:screenOrientation="portrait"
+            android:label="Settings"
             android:windowSoftInputMode="adjustResize" />
-
-        <service
-            android:name=".PokeService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="A small animated pet drawn around the camera cutout, over other apps." />
-        </service>
-
-        <service
-            android:name=".PokeAccessibilityService"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/poke_accessibility" />
-        </service>
-
-        <service
-            android:name=".ears.EarsService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-
-        <receiver
-            android:name=".brain.ReminderReceiver"
-            android:exported="false" />
-
-        <activity
-            android:name=".brain.JournalActivity"
-            android:exported="false"
-            android:label="Poke's journal"
-            android:screenOrientation="portrait" />
 
         <receiver
             android:name=".UpdateReceiver"
             android:exported="false" />
-
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

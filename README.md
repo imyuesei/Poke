@@ -1,36 +1,15 @@
-# Poke
+# Needle Chat
 
-A tiny digital pet that lives in a black island around your phone's front camera, with a ring
-eye on each side of the camera.
+A chat app for **Needle 3** and **Whistle** by Cactus, running entirely on your Android phone.
 
-- Its eyes are thick white rings. Faces are made by straight black bars that slide in and tilt
-  over the rings: happy ∩ ∩, content, shy, grumpy, sad ∪ ∪, and asleep (a thin sliver that
-  breathes late at night). Blinks are two bars closing like eyelids.
-- **Tap** it: happy and a hop. **Tap twice**: startled, eyes wide. **Hold** it: shy, then
-  content. Poke it over and over and it gets grumpy.
-- Open the Poke app and tap **let poke into your island**. Turn on **Poke** in Accessibility
-  so the island can be tapped (the status bar otherwise catches taps at the top of the screen).
-- **Talk to it**: swipe down on the island and talk; each pause of a second is one thing said.
-  Swipe up to stop. Optionally turn on the wake word in the brain lab and say "Poke, …" while
-  the screen is on. Answers are spoken with eSpeak NG (instant, offline).
-  It understands on the phone (Whistle for hearing, Needle 3 for meaning), answers in caveman
-  talk in a bubble under the island and out loud, and remembers every moment in its
-  episodic memory. Try "I parked on level 3 near the blue pillar" and later "where did I park?".
-- **Memory** (stage 3): places and facts with a strength that grows when Poke recalls them and
-  fades when nobody asks; at night, while it sleeps, Poke tidies its memory (merges duplicates,
-  forgets faded old things) and writes a short diary entry about the day.
-- **Tricks** (stage 4): teach Poke by voice. "When I say good night, turn on do not disturb and
-  turn off the flashlight." "Every day at 7 am, play music." "When I plug in, turn on quiet mode."
-  Actions: timers, reminders, flashlight, do not disturb, open apps, music and volume. Say
-  "good Poke" after a trick to make it stronger, "no Poke" to weaken it (it forgets weak tricks).
-- **Growing up** (stage 5): Poke forms its own opinions about the apps you use and the things
-  you talk about, and says so ("Hmph. Instagram again..."); ask "do you like …?". It grows from
-  baby to kid to teen to adult with time and play: eyes, voice and behaviour change, and its
-  personality drifts with how you treat it and how you use your phone.
-- **Journal**: from the brain lab: life stage, personality chart, diary, opinions, tricks, memories.
-- **Brain lab**: hold the "poke" title in the app. Download the brain, set CPU threads per model,
-  turn the wake word on or off, and watch Poke's mind and memories.
-- **Poke updates itself** from this repo's releases. Android asks you to confirm the first
-  update; after that it updates quietly.
+- Type in the chat box, or tap the **mic** on its right to talk: Whistle turns speech into
+  text, and a short pause ends a message. Tap the mic again to stop.
+- Needle 3 answers every message with the **tool call** it picks from the tools you set in
+  settings, with its arguments, confidence and reasoning, or with no call when none fits.
+  (Needle is a tool-calling model; it doesn't write free-text replies.)
+- **Settings** (gear icon): download/load the models (~52 MB, checked against Cactus's
+  published hashes), CPU threads per model, speech options, Needle's tools (JSON) and facts,
+  clear chat.
+- The app updates itself from this repo's releases.
 
 Download: https://github.com/imyuesei/Poke/releases/latest/download/poke.apk

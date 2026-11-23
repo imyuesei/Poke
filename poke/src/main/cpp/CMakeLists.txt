@@ -1,37 +1,13 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(pokebrain C CXX)
+project(pokebrain CXX)
 
 # The Cactus 4 engine for android-arm64 is fetched by CI into cactus/ (see the workflow).
 set(CACTUS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cactus/android-arm64)
 file(GLOB CACTUS_STATIC ${CACTUS_DIR}/*.a)
 file(GLOB CACTUS_SHARED ${CACTUS_DIR}/*.so)
 
-add_library(pokebrain SHARED poke_brain.cpp poke_speech.cpp)
+add_library(pokebrain SHARED poke_brain.cpp)
 
-# eSpeak NG (fetched by CI into espeak-ng/): only the library is built, not its data or tools.
-set(ESPEAK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/espeak-ng)
-if(EXISTS ${ESPEAK_DIR}/CMakeLists.txt)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    set(USE_MBROLA OFF CACHE BOOL "" FORCE)
-    set(USE_LIBSONIC OFF CACHE BOOL "" FORCE)
-    set(USE_LIBPCAUDIO OFF CACHE BOOL "" FORCE)
-    set(USE_ASYNC OFF CACHE BOOL "" FORCE)
-    set(USE_SPEECHPLAYER OFF CACHE BOOL "" FORCE)
-    set(USE_KLATT ON CACHE BOOL "" FORCE)
-    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-    set(ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-    set(COMPILE_INTONATIONS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(${ESPEAK_DIR} espeak-ng EXCLUDE_FROM_ALL)
-    # Link the built archives directly, so eSpeak's compat headers (which redefine
-    # tolower/toupper) don't leak into Poke's own C++ sources.
-    add_dependencies(pokebrain espeak-ng ucd)
-    set_source_files_properties(poke_speech.cpp PROPERTIES INCLUDE_DIRECTORIES ${ESPEAK_DIR}/src/include)
-    target_compile_definitions(pokebrain PRIVATE POKE_HAS_ESPEAK=1)
-    target_link_libraries(pokebrain PRIVATE $<TARGET_FILE:espeak-ng> $<TARGET_FILE:ucd> m)
-    message(STATUS "Linking eSpeak NG")
-else()
-    message(WARNING "eSpeak NG not found in ${ESPEAK_DIR}; speech disabled")
-endif()
 target_include_directories(pokebrain PRIVATE ${CACTUS_DIR})
 find_library(log-lib log)
 

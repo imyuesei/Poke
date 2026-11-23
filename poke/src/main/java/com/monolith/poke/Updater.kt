@@ -22,10 +22,10 @@ import java.net.URL
 import kotlin.concurrent.thread
 
 /**
- * Poke keeps itself up to date from the public GitHub releases of imyuesei/Poke.
- * It checks when the app opens and every few hours while Poke is in the island, downloads a
- * newer poke.apk and installs it over itself. Android asks you to confirm the first update;
- * after that (Android 12+) Poke is the installer of record and updates quietly.
+ * The app keeps itself up to date from the public GitHub releases of imyuesei/Poke.
+ * It checks when the app opens, downloads a newer poke.apk and installs it over itself.
+ * Android asks you to confirm the first update;
+ * after that (Android 12+) the app is the installer of record and updates quietly.
  */
 object Updater {
     private const val LATEST = "https://api.github.com/repos/imyuesei/Poke/releases/latest"
@@ -66,7 +66,7 @@ object Updater {
             askForPermission(c, activity)
             return
         }
-        val file = File(c.cacheDir, "poke-update.apk")
+        val file = File(c.cacheDir, "update.apk")
         if (!download(url, file)) return
         install(c, file)
     }
@@ -85,7 +85,7 @@ object Updater {
             conn.connectTimeout = 15000
             conn.readTimeout = 15000
             conn.setRequestProperty("Accept", "application/vnd.github+json")
-            conn.setRequestProperty("User-Agent", "Poke-Updater")
+            conn.setRequestProperty("User-Agent", "NeedleChat-Updater")
             if (conn.responseCode != 200) null else conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
             conn.disconnect()
@@ -98,7 +98,7 @@ object Updater {
             conn.connectTimeout = 15000
             conn.readTimeout = 60000
             conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "Poke-Updater")
+            conn.setRequestProperty("User-Agent", "NeedleChat-Updater")
             if (conn.responseCode != 200) return false
             conn.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
             out.length() > 0
@@ -133,8 +133,8 @@ object Updater {
             main.post {
                 if (activity.isFinishing) return@post
                 AlertDialog.Builder(activity)
-                    .setTitle("A new Poke is ready")
-                    .setMessage("Allow Poke to install updates, and it will keep itself up to date from now on.")
+                    .setTitle("An update is ready")
+                    .setMessage("Allow installing updates, and the app will keep itself up to date.")
                     .setPositiveButton("Allow") { _, _ ->
                         try {
                             activity.startActivity(settings)
@@ -145,7 +145,7 @@ object Updater {
                     .show()
             }
         } else {
-            notify(c, "A new Poke is ready", "Tap to let Poke update itself.", settings)
+            notify(c, "An update is ready", "Tap to allow automatic updates.", settings)
         }
     }
 
@@ -155,7 +155,7 @@ object Updater {
         target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pi = PendingIntent.getActivity(c, NOTIF_ID, target, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(c, CHANNEL)
-            .setSmallIcon(R.drawable.ic_poke)
+            .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pi)
@@ -164,29 +164,6 @@ object Updater {
         try {
             nm.notify(NOTIF_ID, n)
         } catch (_: SecurityException) {
-        }
-    }
-
-    /** Checks shortly after a host starts and then every few hours while it runs. */
-    class Schedule {
-        private val handler = Handler(Looper.getMainLooper())
-        private var ctx: Context? = null
-        private val tick = object : Runnable {
-            override fun run() {
-                ctx?.let { check(it) }
-                handler.postDelayed(this, 4 * 3600_000L)
-            }
-        }
-
-        fun start(c: Context) {
-            ctx = c.applicationContext
-            handler.removeCallbacks(tick)
-            handler.postDelayed(tick, 30_000L)
-        }
-
-        fun stop() {
-            handler.removeCallbacks(tick)
-            ctx = null
         }
     }
 }
@@ -206,7 +183,7 @@ class UpdateReceiver : BroadcastReceiver() {
         try {
             c.startActivity(confirm)
         } catch (_: Exception) {
-            Updater.notify(c, "Poke update ready", "Tap to install the new Poke.", confirm)
+            Updater.notify(c, "Update ready", "Tap to install the update.", confirm)
         }
     }
 }
