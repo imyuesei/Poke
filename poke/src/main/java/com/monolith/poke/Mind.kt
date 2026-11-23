@@ -38,7 +38,7 @@ object Mind {
         POKE, DOUBLE_POKE, HOLD_START, HOLD_END,
         UNLOCK, SCREEN_ON, SCREEN_OFF, CHARGING, UNPLUGGED, BATTERY_LOW, HEADSET,
         PRAISE, SCOLD, GREETING, GOODNIGHT, LOVE, PLAY, TAUGHT, CONFUSED,
-        WAKE, THINKING,
+        WAKE, THINKING, LISTEN_ON, LISTEN_OFF, TIMER,
     }
 
     /** Trait order in [traits]. */
@@ -76,6 +76,9 @@ object Mind {
     @Volatile var actX = 0f
         private set
     @Volatile var actY = 0f
+        private set
+    /** True while Poke's ears are open (swiped down); the eyes look attentive. */
+    @Volatile var listening = false
         private set
     /** The last thing Poke said (for the speech bubble); [saidSerial] increments each time. */
     @Volatile var said = ""
@@ -398,6 +401,22 @@ object Mind {
                 show(Face.STARTLED, 500)
                 Voice.chirp(ctx, Voice.Kind.LISTEN, this)
             }
+            Event.LISTEN_ON -> {
+                if (asleep) wake(false)
+                listening = true
+                doAct(Act.LOOK)
+                Voice.chirp(ctx, Voice.Kind.LISTEN, this)
+            }
+            Event.LISTEN_OFF -> {
+                listening = false
+                doAct(Act.BLINK)
+            }
+            Event.TIMER -> {
+                if (asleep) wake(false)
+                show(Face.STARTLED, 1200)
+                doAct(Act.HOP)
+                Voice.chirp(ctx, Voice.Kind.STARTLED, this)
+            }
             Event.THINKING -> {
                 if (asleep) wake(false)
                 doAct(Act.GLANCE, 0.3f, -0.8f) // looks up while it thinks
@@ -422,7 +441,7 @@ object Mind {
     /** Social moments and phone life go into the episodic memory (pokes at most every 15 s). */
     private fun logEpisode(e: Event) {
         val c = ctx ?: return
-        if (e == Event.THINKING || e == Event.SCREEN_ON || e == Event.SCREEN_OFF || e == Event.HOLD_END) return
+        if (e == Event.THINKING || e == Event.LISTEN_ON || e == Event.LISTEN_OFF || e == Event.SCREEN_ON || e == Event.SCREEN_OFF || e == Event.HOLD_END) return
         val now = System.currentTimeMillis()
         if (now - (lastLogged[e] ?: 0L) < 15_000L) return
         lastLogged[e] = now

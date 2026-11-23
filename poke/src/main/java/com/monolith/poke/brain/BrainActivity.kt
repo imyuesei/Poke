@@ -40,6 +40,7 @@ class BrainActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var talk: TextView
     private lateinit var wake: TextView
+    private lateinit var words: TextView
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var recording = false
     private var busy = false
@@ -85,8 +86,11 @@ class BrainActivity : Activity() {
         for (m in Brain.MODELS) col.addView(threadRow(m, ::dp))
         wake = button("") { EarsService.setWakeWord(this, !EarsService.wakeWordOn(this)); refreshWake() }
         col.addView(wake)
+        col.addView(gap(8))
+        words = button("") { com.monolith.poke.Speech.setWordsOn(this, !com.monolith.poke.Speech.wordsOn(this)); refreshWake() }
+        col.addView(words)
         col.addView(text(11f, 0x77FFFFFF.toInt()).apply {
-            text = "Hold the island and talk to Poke anytime. The wake word lets you say \"Poke, …\" while the " +
+            text = "Swipe down on the island to talk to Poke, swipe up to stop. The wake word lets you say \"Poke, …\" while the " +
                 "screen is on; it uses more battery. Threads: more is faster until the phone gets hot; auto uses every core."
         })
         col.addView(gap(16))
@@ -181,6 +185,7 @@ class BrainActivity : Activity() {
 
     private fun refreshWake() {
         wake.text = if (EarsService.wakeWordOn(this)) "wake word \"Poke\": on" else "wake word \"Poke\": off"
+        words.text = if (com.monolith.poke.Speech.wordsOn(this)) "speak answers aloud: on" else "speak answers aloud: off (bubble only)"
         if (EarsService.wakeWordOn(this) && !Ears.hasMic(this)) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 3)
         }
@@ -231,7 +236,7 @@ class BrainActivity : Activity() {
         said.text = "…"
         Brain.async({
             val thought = Brain.think(this, text, Skills.TOOLS, Skills.system())
-            val reply = Skills.act(this, thought)
+            val reply = Skills.act(this, thought, text)
             Episodes.log(this, "heard", text, reply.detail, runCatching { Brain.embed(this, text) }.getOrNull())
             thought to reply
         }) { r ->

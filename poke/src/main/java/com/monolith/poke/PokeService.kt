@@ -230,7 +230,8 @@ class Geometry(val left: Int, val width: Int, val height: Int, val lensLeft: Flo
 /**
  * The island itself: a black shape flush with the top edge (flat top, rounded bottom), like
  * Monolith's, with Poke's eyes either side of the camera. Tap = happy, two taps = startled,
- * hold = petted, and while held Poke listens: talk to it and let go.
+ * hold = petted. Swipe down = Poke listens (each pause of 1 s is one thing said); swipe up =
+ * it stops listening.
  */
 @SuppressLint("ViewConstructor")
 class Island(c: Context, private val geo: Geometry) : View(c) {
@@ -266,8 +267,6 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
             holding = true
             pet.pet(true)
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            // held: Poke listens until you let go
-            com.monolith.poke.ears.Ears.startHeld(context)
             wake()
         }
     })
@@ -336,12 +335,49 @@ class Island(c: Context, private val geo: Geometry) : View(c) {
         removeCallbacks(hideBubble)
     }
 
+    private var downY = 0f
+    private var swiped = false
+
+    /** Vertical swipes on the island: down opens Poke's ears, up closes them. */
+    private fun swipe(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { downY = e.rawY; swiped = false }
+            MotionEvent.ACTION_MOVE -> if (!swiped) {
+                val dy = e.rawY - downY
+                if (dy > 28 * d) {
+                    swiped = true
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    com.monolith.poke.ears.Ears.startSession(context)
+                    wake()
+                } else if (dy < -14 * d) {
+                    swiped = true
+                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    com.monolith.poke.ears.Ears.stopSession()
+                    wake()
+                }
+            }
+        }
+        return swiped
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (swipe(e)) {
+            // a swipe is not a poke or a hold
+            if (e.actionMasked == MotionEvent.ACTION_MOVE) {
+                val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
+                gestures.onTouchEvent(cancel)
+                cancel.recycle()
+            }
+            if (holding && (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL)) {
+                holding = false
+                pet.pet(false)
+            }
+            return true
+        }
         gestures.onTouchEvent(e)
         if ((e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) && holding) {
             holding = false
-            com.monolith.poke.ears.Ears.stopHeld()
             pet.pet(false)
             wake()
         }

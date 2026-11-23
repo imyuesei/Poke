@@ -10,8 +10,9 @@ eye on each side of the camera.
   content. Poke it over and over and it gets grumpy.
 - Open the Poke app and tap **let poke into your island**. Turn on **Poke** in Accessibility
   so the island can be tapped (the status bar otherwise catches taps at the top of the screen).
-- **Talk to it**: hold the island and talk, then let go (holding without talking is petting).
-  Optionally turn on the wake word in the brain lab and say "Poke, …" while the screen is on.
+- **Talk to it**: swipe down on the island and talk; each pause of a second is one thing said.
+  Swipe up to stop. Optionally turn on the wake word in the brain lab and say "Poke, …" while
+  the screen is on. Answers are spoken with eSpeak NG (instant, offline).
   It understands on the phone (Whistle for hearing, Needle 3 for meaning), answers in caveman
   talk in a bubble under the island and out loud, and remembers every moment in its
   episodic memory. Try "I parked on level 3 near the blue pillar" and later "where did I park?".

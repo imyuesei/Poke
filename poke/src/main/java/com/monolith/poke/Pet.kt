@@ -181,6 +181,12 @@ class Pet(@Suppress("UNUSED_PARAMETER") c: Context) {
                 Mind.Face.ASLEEP -> dy += 0.12f
                 else -> {}
             }
+            // ears open: eyes a little wider, looking at you
+            if (Mind.listening && face == Mind.Face.ROUND) {
+                scale *= 1.1f
+                dx *= 0.3f
+                dy *= 0.3f
+            }
             when (act) {
                 Mind.Act.TILT -> { dy += if (i == 0) -0.2f else 0.2f; scale *= if (i == 0) 1.08f else 0.94f }
                 Mind.Act.BOUNCE -> dy += -0.16f * abs(sin((t - actStart) / 150.0 * PI).toFloat())
@@ -221,7 +227,7 @@ class Pet(@Suppress("UNUSED_PARAMETER") c: Context) {
         var moving = false
         for (e in eyes) if (e.springs.any { it.moving } || e.barAngle.moving) moving = true
         glow = if (face == Mind.Face.ASLEEP) 0.55f + 0.3f * sin(t / 1100.0 * PI).toFloat() else min(1f, glow + dt * 3f)
-        return moving || face == Mind.Face.ASLEEP || face == Mind.Face.SHY || face == Mind.Face.GRUMPY ||
+        return moving || Mind.listening || face == Mind.Face.ASLEEP || face == Mind.Face.SHY || face == Mind.Face.GRUMPY ||
             face == Mind.Face.CONTENT || act != Mind.Act.NONE || blinkAt >= 0
     }
 
